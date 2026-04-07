@@ -79,7 +79,7 @@ Add the following block to your sandbox policy YAML under `network_policies`:
       - { path: /bin/bash* }
       - { path: /usr/bin/bash* }
 ```
-
+To get the current policy you can run `openshell policy get my-assistant --full 2>&1 | sed -n '/^---$/,$ p' | tail -n +2 > current-policy.yaml`
 Replace `{SPARK_IP}` with your DGX Spark's actual IP address.
 
 Apply the updated policy:
