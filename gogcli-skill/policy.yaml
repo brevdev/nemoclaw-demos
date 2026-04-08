@@ -1,0 +1,72 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+preset:
+  name: gogcli
+  description: "Google Workspace CLI (gogcli) — Gmail, Calendar, and Drive"
+  notes: |
+    Token exchange is handled by gog-token-server.py on the host, not by the
+    sandbox. setup-gogcli.sh adds a dynamic google_token_server policy block
+    with the actual host IP and port at apply time.
+
+network_policies:
+  google_gmail:
+    name: google_gmail
+    endpoints:
+      - host: gmail.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/gog-bin }
+
+  google_calendar:
+    name: google_calendar
+    endpoints:
+      - host: calendar.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/gog-bin }
+
+  google_drive:
+    name: google_drive
+    endpoints:
+      - host: drive.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+      # Drive file upload uses a separate upload endpoint
+      - host: www.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/upload/**" }
+          - allow: { method: POST, path: "/upload/**" }
+          - allow: { method: PUT, path: "/upload/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/gog-bin }
