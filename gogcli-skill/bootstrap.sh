@@ -161,7 +161,7 @@ echo "OS: $OS ($ARCH)"
 
 # -- Locate (and optionally build) the gog binary -----------------------------
 
-GOGCLI_REPO_URL="https://github.com/NVIDIA/gogcli.git"
+GOGCLI_REPO_URL="https://github.com/steipete/gogcli.git"
 GOGCLI_REPO="${GOGCLI_REPO_OVERRIDE:-$(dirname "$(dirname "$SKILL_DIR")")/gogcli}"
 
 if [[ -n "$GOG_BIN_OVERRIDE" ]]; then
@@ -173,7 +173,14 @@ elif GOG_BIN="$GOGCLI_REPO/bin/gog" && [[ -x "$GOG_BIN" ]]; then
 else
   if [[ ! -d "$GOGCLI_REPO" ]]; then
     echo "Cloning gogcli to $GOGCLI_REPO ..."
-    git clone "$GOGCLI_REPO_URL" "$GOGCLI_REPO"
+    if ! GIT_TERMINAL_PROMPT=0 git clone "$GOGCLI_REPO_URL" "$GOGCLI_REPO" 2>&1; then
+      rm -rf "$GOGCLI_REPO"
+      echo ""
+      echo "Error: failed to clone $GOGCLI_REPO_URL"
+      echo "If the repo is private, clone it manually first:"
+      echo "  git clone $GOGCLI_REPO_URL $GOGCLI_REPO"
+      exit 1
+    fi
   fi
 
   echo "Building gog from $GOGCLI_REPO ..."
