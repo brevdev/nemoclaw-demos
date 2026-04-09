@@ -100,34 +100,21 @@ cd parakeet-tdt-0.6b-v3-fastapi-openai
 docker compose up -d parakeet-cpu
 ```
 
-This downloads and starts the Parakeet model in a Docker container on port 5000. First startup takes a few minutes to download the model.
+This downloads and starts the Parakeet model in a Docker container on port 5092. First startup takes a few minutes to download the model.
 
 Verify the service is running:
 
 ``` bash
-curl -s http://localhost:5000/docs | head -5
+docker ps --filter "name=parakeet" --format "{{.Names}} {{.Status}}"
 ```
 
-You should see HTML output (the FastAPI docs page). You can also open `http://localhost:5000` in a browser for a drag-and-drop transcription UI.
+You should see:
 
-Test with a quick transcription (optional):
-
-``` bash
-# Generate a short test audio file
-python3 -c "
-import struct, wave
-with wave.open('/tmp/test-silence.wav', 'w') as w:
-    w.setnchannels(1)
-    w.setsampwidth(2)
-    w.setframerate(16000)
-    w.writeframes(struct.pack('<' + 'h' * 16000, *([0] * 16000)))
-"
-curl -X POST http://localhost:5000/v1/audio/transcriptions \
-  -F "file=@/tmp/test-silence.wav" \
-  -F "response_format=text"
+```
+parakeet-cpu Up X minutes (healthy)
 ```
 
-You should see an empty or near-empty transcription (it's silence).
+You can also open `http://localhost:5092` in a browser for a drag-and-drop transcription UI.
 
 ## Part 5: Update the OpenShell Network Policy
 
@@ -205,7 +192,7 @@ Set the `PARAKEET_URL` environment variable so the skill knows where to reach th
 
 ``` bash
 docker exec $DOCKER_CTR kubectl exec -n openshell $SANDBOX -c agent \
-  -- bash -c "echo 'export PARAKEET_URL=http://$HOST_IP:5000' >> /sandbox/.bashrc"
+  -- bash -c "echo 'export PARAKEET_URL=http://$HOST_IP:5092' >> /sandbox/.bashrc"
 ```
 
 Restart the gateway to pick up the new skill:
@@ -232,14 +219,30 @@ You should see `parakeet-stt` listed as an available skill.
 
 ## Part 7: Test It
 
-### Upload a test audio file
+### Create a test audio file
 
-You need an audio file in the sandbox workspace. You can download a sample or upload your own:
+You need an audio file in the sandbox workspace. The easiest way is to generate one with `espeak-ng` on the host:
 
 ``` bash
-# Download a sample English speech audio file
-docker exec $DOCKER_CTR kubectl exec -n openshell $SANDBOX -c agent \
-  -- bash -c 'curl -sL "https://www2.cs.uic.edu/~i101/SoundFiles/gettysburg.wav" -o /sandbox/.openclaw-data/workspace/test-speech.wav'
+# Install espeak-ng (if not already installed)
+sudo apt-get install -y espeak-ng
+
+# Generate a speech WAV file
+espeak-ng -w /tmp/test-speech.wav "Hello, this is a test of the Parakeet speech to text system."
+```
+
+You should see a file around 160KB:
+
+```
+-rw-rw-r-- 1 user user 160528 ... /tmp/test-speech.wav
+```
+
+Copy it into the sandbox:
+
+``` bash
+cat /tmp/test-speech.wav | docker exec -i $DOCKER_CTR \
+  kubectl exec -i -n openshell $SANDBOX -c agent \
+  -- sh -c 'cat > /sandbox/.openclaw-data/workspace/test-speech.wav'
 ```
 
 Verify:
@@ -249,7 +252,7 @@ docker exec $DOCKER_CTR kubectl exec -n openshell $SANDBOX -c agent \
   -- ls -la /sandbox/.openclaw-data/workspace/test-speech.wav
 ```
 
-You should see a file larger than 10KB.
+You should see a file larger than 10KB. You can also upload your own audio files (WAV, MP3, OGG, FLAC).
 
 ### Test the Parakeet API directly from the sandbox
 
@@ -257,7 +260,7 @@ Before using the agent, verify the sandbox can reach the Parakeet service:
 
 ``` bash
 docker exec $DOCKER_CTR kubectl exec -n openshell $SANDBOX -c agent \
-  -- bash -c "curl -s -X POST http://$HOST_IP:5000/v1/audio/transcriptions -F 'file=@/sandbox/.openclaw-data/workspace/test-speech.wav' -F 'response_format=text'"
+  -- bash -c "curl -s -X POST http://$HOST_IP:5092/v1/audio/transcriptions -F 'file=@/sandbox/.openclaw-data/workspace/test-speech.wav' -F 'response_format=text'"
 ```
 
 You should see a text transcription of the audio (e.g. the Gettysburg Address). If you get a connection error, check the network policy (Part 5).
@@ -294,7 +297,7 @@ Other prompts to try:
 │  └──────────┬───────────────────┘                        │
 │             │ curl POST /v1/audio/transcriptions          │
 │             ▼                                            │
-│  ┌──────────────────────────────┐ (on host, port 5000)   │
+│  ┌──────────────────────────────┐ (on host, port 5092)   │
 │  │  Parakeet STT Service        │                        │
 │  │  NVIDIA Parakeet TDT 0.6B v3 │                        │
 │  │  ONNX Runtime (CPU)          │                        │
@@ -309,7 +312,7 @@ Other prompts to try:
 
 | Issue | Fix |
 |-------|-----|
-| `Connection refused` from sandbox to Parakeet | Check network policy has the correct `HOST_IP` and port 5000. Redo Part 5. |
+| `Connection refused` from sandbox to Parakeet | Check network policy has the correct `HOST_IP` and port 5092. Redo Part 5. |
 | `l7_decision=deny` in OpenShell logs | The sandbox policy isn't allowing traffic. Verify the `parakeet_stt` block in the policy. |
 | Agent doesn't know about parakeet-stt | Verify SKILL.md was uploaded to `/sandbox/.openclaw/skills/parakeet-stt/` and the gateway was restarted. |
 | Parakeet service not running | Check `docker ps --filter "name=parakeet"`. Restart with `docker compose up -d parakeet-cpu`. |
