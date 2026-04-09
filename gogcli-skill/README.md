@@ -4,21 +4,21 @@ NemoClaw skill that gives a sandboxed agent read-only access to Google Workspace
 
 ## How it works
 
-OAuth2 refresh tokens stay on the host inside a lightweight token server (`gog-token-server.py`). The sandbox gets a thin `gog` wrapper that fetches a short-lived access token from the host on each call — the sandbox never sees the refresh token.
+OAuth2 refresh tokens stay on the host inside a push daemon (`gog-token-server.py`). The daemon exchanges the refresh token for short-lived access tokens and writes them directly into the sandbox filesystem — no network socket is exposed.
 
 ```
-sandbox (gog wrapper) ──GET /token──> host token server ──OAuth2──> Google APIs
+host push daemon ──openshell sandbox upload──> /sandbox/.openclaw-data/gogcli/access_token
+sandbox gog wrapper ──reads token──> Google APIs
 ```
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `bootstrap.sh` | One-command setup: installs Go (if needed), clones and builds `gogcli`, stores credentials, runs OAuth consent, starts token server, pushes gogcli into sandbox, applies network policy, uploads skill, restarts gateway |
-| `setup.sh` | Re-deploy only: restart token server + re-upload sandbox config (skips OAuth consent) |
-| `gog-token-server.py` | Host-side HTTP server — serves `GET /token` (fresh access token) and `GET /health` |
+| `bootstrap.sh` | One-command setup: installs Go (if needed), clones and builds `gogcli`, stores credentials, runs OAuth consent, starts push daemon, pushes gogcli into sandbox, adds gog to sandbox PATH, applies network policy |
+| `setup.sh` | Re-deploy only: restart push daemon + re-upload sandbox config (skips OAuth consent) |
+| `gog-token-server.py` | Host-side push daemon — exchanges the refresh token for short-lived access tokens and writes them into the sandbox via `openshell sandbox upload` |
 | `policy.yaml` | NemoClaw network policy — restricts sandbox egress to Google APIs (read-only) |
-| `SKILL.md` | In-sandbox skill card loaded by the OpenClaw agent |
 
 ## Quick start
 
@@ -33,22 +33,22 @@ export GOG_KEYRING_PASSWORD=<choose-a-password>
   --sandbox <sandbox-name>
 ```
 
-Bootstrap handles everything automatically: it checks your OS, installs Go if needed, clones and builds the `gogcli` repo (as a sibling directory), runs the OAuth consent flow, starts the token server, pushes gogcli into the sandbox, applies the network policy, uploads the skill, and restarts the gateway.
+Bootstrap handles everything automatically: checks your OS, installs Go if needed, clones and builds `gogcli` (as a sibling directory), runs the OAuth consent flow, starts the push daemon, pushes gogcli into the sandbox, adds `gog` to the sandbox PATH via `.bashrc`, and applies the network policy.
 
 ### 2. Re-deploy (after a reboot or sandbox reset)
 
 ```bash
-export GOG_KEYRING_PASSWORD=<same-password>
-GOG_KEYRING_PASSWORD=$GOG_KEYRING_PASSWORD ./gogcli-skill/setup.sh <sandbox-name>
+GOG_KEYRING_PASSWORD=<same-password> ./gogcli-skill/setup.sh <sandbox-name>
 ```
 
 ### 3. Verify
 
 ```bash
-curl -sf http://localhost:9100/health
+# On the host — confirm the push daemon is running
+cat ~/.config/gogcli/push-daemon.log | tail -5
 
-openshell sandbox connect <sandbox-name>
-/sandbox/.config/gogcli/gog gmail list -a you@gmail.com
+# Inside the sandbox
+openshell sandbox exec -n <sandbox-name> -- bash -c 'source ~/.bashrc && gog gmail search "is:inbox" --max 3'
 ```
 
 ## Network policy
@@ -60,7 +60,6 @@ All three Google services are currently **read-only** (GET only). Write methods 
 | Gmail | `gmail.googleapis.com` | GET |
 | Calendar | `calendar.googleapis.com` | GET |
 | Drive | `drive.googleapis.com` | GET |
-| Token server | `<host-ip>:9100` | GET `/token`, GET `/health` |
 
 ## Prerequisites
 
@@ -91,5 +90,4 @@ All three Google services are currently **read-only** (GET only). Write methods 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GOG_KEYRING_PASSWORD` | Yes | — | Encrypts the local token file |
-| `GOG_ACCOUNT` | No | first account in keyring | Gmail address for the token server |
-| `GOG_TOKEN_SERVER_PORT` | No | `9100` | Token server port |
+| `GOG_ACCOUNT` | No | first account in keyring | Gmail address for the push daemon |

@@ -5,9 +5,9 @@ preset:
   name: gogcli
   description: "Google Workspace CLI (gogcli) — Gmail, Calendar, and Drive"
   notes: |
-    Token exchange is handled by gog-token-server.py on the host, not by the
-    sandbox. setup-gogcli.sh adds a dynamic google_token_server policy block
-    with the actual host IP and port at apply time.
+    Tokens are pushed into the sandbox filesystem by the host-side push daemon
+    (gog-token-server.py). The sandbox reads the token from a file — no network
+    socket is exposed and no host_services policy is required.
 
 network_policies:
   google_gmail:
@@ -25,7 +25,7 @@ network_policies:
           # - allow: { method: PATCH, path: "/**" }
           # - allow: { method: DELETE, path: "/**" }
     binaries:
-      - { path: /sandbox/.config/gogcli/gog-bin }
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
 
   google_calendar:
     name: google_calendar
@@ -42,7 +42,7 @@ network_policies:
           # - allow: { method: PATCH, path: "/**" }
           # - allow: { method: DELETE, path: "/**" }
     binaries:
-      - { path: /sandbox/.config/gogcli/gog-bin }
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
 
   google_drive:
     name: google_drive
@@ -69,4 +69,5 @@ network_policies:
       #     - allow: { method: POST, path: "/upload/**" }
       #     - allow: { method: PUT, path: "/upload/**" }
     binaries:
-      - { path: /sandbox/.config/gogcli/gog-bin }
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+

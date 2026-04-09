@@ -17,10 +17,10 @@ The bootstrap script handles everything end-to-end:
 1. **Installs Go** if not found or below 1.21.
 2. **Clones and builds `gogcli`** (if the binary isn't already present).
 3. **Runs the GCP OAuth consent flow** — a browser window opens for you to sign in and grant access.
-3. **Starts the token server** on the host, which holds the refresh token and serves short-lived access tokens.
-5. **Pushes gogcli into the sandbox** with a thin wrapper that fetches tokens from the host on each call.
-6. **Applies the network policy** restricting sandbox egress to Google APIs (read-only).
-7. **Uploads the skill** and restarts the OpenClaw gateway.
+4. **Starts the push daemon** on the host, which holds the refresh token and pushes short-lived access tokens directly into the sandbox filesystem.
+5. **Pushes gogcli into the sandbox** with a thin wrapper that reads the token from the file written by the daemon.
+6. **Adds `gog` to the sandbox PATH** via `.bashrc` so the OpenClaw agent can find it.
+7. **Applies the network policy** restricting sandbox egress to Google APIs (read-only).
 
 ```bash
 cd <nemoclaw-demos-repo>
@@ -36,38 +36,35 @@ export GOG_KEYRING_PASSWORD=<password>
 
 ## Part 2: Re-deploy (After a Reboot or Sandbox Reset)
 
-`setup.sh` restarts the token server, re-uploads the sandbox wrapper, and reapplies the network policy — without repeating the OAuth consent flow:
+`setup.sh` restarts the push daemon, re-uploads the sandbox wrapper, and reapplies the network policy — without repeating the OAuth consent flow:
 
 ```bash
 cd <nemoclaw-demos-repo>
-GOG_KEYRING_PASSWORD=<password> \
-  ./gogcli-skill/setup.sh <sandbox-name>
+GOG_KEYRING_PASSWORD=<password> ./gogcli-skill/setup.sh <sandbox-name>
 ```
-
-Replace `<sandbox-name>` with your OpenShell sandbox name (e.g. `email`).
 
 Verify inside the sandbox:
 
 ```bash
-openshell sandbox connect <sandbox-name>
-/sandbox/.config/gogcli/gog auth list
+openshell sandbox exec -n <sandbox-name> -- bash -c 'source ~/.bashrc && gog gmail search "is:inbox" --max 3'
 ```
 
 ## Trying It Out
 
-Open the OpenClaw web UI and try these prompts:
+Open the OpenClaw TUI or web UI and try these prompts:
 
 - "Search my Gmail for unread messages from NVIDIA and summarize them."
 - "Check my calendar for meetings tomorrow and give me a prep briefing."
 - "List the most recent files in my Google Drive."
 
+OpenClaw ships a built-in `gog` skill — as long as `gog` is on PATH (set by bootstrap), the agent will find and use it automatically.
+
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| `gog auth list` shows no accounts | Re-run `bootstrap.sh` to redo the OAuth consent flow. |
-| `gog: could not reach token server` inside sandbox | The host-side token server isn't running. Re-run `setup.sh` to restart it, or check `~/.config/gogcli/token-server.log` for errors. |
-| `l7_decision=deny` for `curl` to host IP | The `google_token_server` policy block is missing or has the wrong IP/port. Re-run `setup.sh` to reapply. |
+| `gog auth list` shows no accounts | Expected — auth is handled by the push daemon on the host, not stored in the sandbox keyring. Run `gog gmail search "is:inbox"` instead to verify access. |
+| Token expired or not found inside sandbox | The push daemon isn't running or failed to push. Check `~/.config/gogcli/push-daemon.log` on the host and re-run `setup.sh`. |
 | `l7_decision=deny` for `gmail.googleapis.com` | The Google API policy blocks weren't applied. Re-run `setup.sh` and confirm `google_gmail` / `google_calendar` / `google_drive` appear in `openshell policy get --full <sandbox-name>`. |
-| Agent doesn't know about `gog` | Confirm `SKILL.md` was uploaded to `/sandbox/.openclaw/skills/gogcli/` and the gateway was restarted. |
-| Gmail send fails | Only `gmail.readonly` scope is enabled in the current GCP project. Read and search operations work; sending requires the Gmail send scope to be added to your OAuth client. |
+| Agent can't find `gog` | The sandbox `.bashrc` PATH entry may be missing. Re-run `setup.sh` which re-adds it. |
+| Gmail send fails | Only `gmail.readonly` scope is enabled by default. Read and search work; sending requires the Gmail send scope to be added to your OAuth client and re-running `bootstrap.sh`. |

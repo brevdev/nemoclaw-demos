@@ -4,9 +4,9 @@
 #
 # Set up gogcli (Google Workspace CLI) inside a NemoClaw sandbox.
 #
-# The refresh token stays on the host inside a token server (gog-token-server.py).
-# The sandbox gets a thin gog wrapper that fetches a fresh access token from the
-# host on every invocation — no credentials are stored inside the sandbox.
+# The refresh token stays on the host inside the push daemon (gog-token-server.py).
+# The daemon exchanges the refresh token for short-lived access tokens and pushes
+# them directly into the sandbox filesystem — no network socket is exposed.
 #
 # Prerequisites:
 #   1. gog binary built (run `make` in gogcli repo, or pass path explicitly)
@@ -20,14 +20,12 @@
 #   gog-binary    — path to built gog binary (default: searches PATH + common locations)
 #
 # Optional env:
-#   GOG_ACCOUNT           — Gmail address for the token server (default: first account in keyring)
-#   GOG_TOKEN_SERVER_PORT — token server port (default: 9100)
+#   GOG_ACCOUNT           — Gmail address for the push daemon (default: first account in keyring)
 
 set -euo pipefail
 
 SANDBOX=${1:-email}
 GOG_BIN_OVERRIDE=${2:-}
-TOKEN_PORT="${GOG_TOKEN_SERVER_PORT:-9100}"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # -- Locate the gog binary -----------------------------------------------------
@@ -98,62 +96,48 @@ if [[ -z "$GOG_ACCOUNT" ]]; then
   exit 1
 fi
 
-# -- Determine host IP ---------------------------------------------------------
-
-HOST_IP="$(hostname -I | awk '{print $1}')"
-if [[ -z "$HOST_IP" ]]; then
-  echo "Error: could not determine host IP address."
-  exit 1
-fi
-echo "Host IP: $HOST_IP"
-
-# -- Start (or restart) the token server --------------------------------------
+# -- Start (or restart) the push daemon ----------------------------------------
 #
-# The token server holds the refresh token on the host and serves fresh access
-# tokens to the sandbox on demand. The sandbox never sees the refresh token.
+# The push daemon holds the refresh token on the host, exchanges it for
+# short-lived access tokens, and pushes them into the sandbox filesystem via
+# `openshell sandbox upload`. No network socket is exposed.
 
-TOKEN_SERVER_PID_FILE="$HOME/.config/gogcli/token-server.pid"
-
-start_token_server() {
-  if [[ -f "$TOKEN_SERVER_PID_FILE" ]]; then
-    OLD_PID=$(cat "$TOKEN_SERVER_PID_FILE" 2>/dev/null || true)
-    if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
-      echo "Stopping existing token server (pid $OLD_PID)..."
-      kill "$OLD_PID" 2>/dev/null || true
-      sleep 1
-    fi
-    rm -f "$TOKEN_SERVER_PID_FILE"
-  fi
-
-  echo "Starting token server on port $TOKEN_PORT..."
-  GOG_KEYRING_BACKEND=file \
-  GOG_KEYRING_PASSWORD="$GOG_KEYRING_PASSWORD" \
-  XDG_CONFIG_HOME="${GOG_CONFIG_DIR%/gogcli}" \
-  nohup python3 "$SKILL_DIR/gog-token-server.py" \
-    "$GOG_ACCOUNT" \
-    --port "$TOKEN_PORT" \
-    --bind "$HOST_IP" \
-    --gog "$GOG_BIN" \
-    > "$HOME/.config/gogcli/token-server.log" 2>&1 &
-  echo $! > "$TOKEN_SERVER_PID_FILE"
-
-  local retries=10
-  while (( retries-- > 0 )); do
-    if curl -sf "http://127.0.0.1:${TOKEN_PORT}/health" >/dev/null 2>&1; then
-      echo "Token server ready (pid $(cat "$TOKEN_SERVER_PID_FILE"))."
-      return 0
-    fi
+PUSH_DAEMON_PID_FILE="$HOME/.config/gogcli/push-daemon.pid"
+if [[ -f "$PUSH_DAEMON_PID_FILE" ]]; then
+  OLD_PID=$(cat "$PUSH_DAEMON_PID_FILE" 2>/dev/null || true)
+  if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "Stopping existing push daemon (pid $OLD_PID)..."
+    kill "$OLD_PID" 2>/dev/null || true
     sleep 1
-  done
-  echo "Warning: token server did not respond within 10s; check $HOME/.config/gogcli/token-server.log"
-}
+  fi
+  rm -f "$PUSH_DAEMON_PID_FILE"
+fi
 
-start_token_server
+echo "Starting push daemon..."
+GOG_KEYRING_BACKEND=file \
+GOG_KEYRING_PASSWORD="$GOG_KEYRING_PASSWORD" \
+XDG_CONFIG_HOME="${GOG_CONFIG_DIR%/gogcli}" \
+nohup python3 "$SKILL_DIR/gog-token-server.py" \
+  "$GOG_ACCOUNT" \
+  "$SANDBOX" \
+  --gog "$GOG_BIN" \
+  > "$HOME/.config/gogcli/push-daemon.log" 2>&1 &
+
+# Wait for first token push (check for token file in sandbox)
+echo "Waiting for initial token push..."
+retries=15
+while (( retries-- > 0 )); do
+  if grep -q "Token pushed to sandbox" "$HOME/.config/gogcli/push-daemon.log" 2>/dev/null; then
+    echo "Token pushed successfully."
+    break
+  fi
+  sleep 1
+done
 
 # -- Build sandbox upload directory -------------------------------------------
 #
 # Upload the gog config (credentials.json, config.json) plus a gog wrapper
-# script that fetches a fresh access token from the host on each call.
+# script that reads the access token from the file pushed by the daemon.
 # The keyring directory is intentionally excluded — credentials stay on the host.
 
 UPLOAD_DIR=$(mktemp -d /tmp/gogcli-upload-XXXXXX)
@@ -161,28 +145,56 @@ trap 'rm -rf "$UPLOAD_DIR"' EXIT
 
 cp -r "$GOG_CONFIG_DIR/." "$UPLOAD_DIR/"
 rm -rf "$UPLOAD_DIR/keyring" "$UPLOAD_DIR/gog" "$UPLOAD_DIR/gog-bin" "$UPLOAD_DIR/env.sh" \
-       "$UPLOAD_DIR/token-server.pid" "$UPLOAD_DIR/token-server.log"
+       "$UPLOAD_DIR/push-daemon.pid" "$UPLOAD_DIR/push-daemon.log"
 
-cp "$GOG_BIN" "$UPLOAD_DIR/gog-bin"
-chmod +x "$UPLOAD_DIR/gog-bin"
-
-cat > "$UPLOAD_DIR/gog" <<WRAPEOF
-#!/bin/bash
-# gogcli wrapper — fetches a fresh access token from the host token server.
-# Re-run setup.sh to update host IP or port.
-_GOG_TOKEN="\$(curl -sf 'http://${HOST_IP}:${TOKEN_PORT}/token')" || {
-  echo "gogcli: could not reach token server at ${HOST_IP}:${TOKEN_PORT}" >&2
-  exit 1
-}
-export XDG_CONFIG_HOME=/sandbox/.config
-exec env GOG_ACCESS_TOKEN="\$_GOG_TOKEN" /sandbox/.config/gogcli/gog-bin "\$@"
-WRAPEOF
-chmod +x "$UPLOAD_DIR/gog"
-
-echo "Uploading gogcli config + wrapper..."
+echo "Uploading gogcli config..."
 openshell sandbox upload "$SANDBOX" "$UPLOAD_DIR" /sandbox/.config/gogcli
 
-# -- Apply gogcli network policy -----------------------------------------------
+# Install gog-bin (actual binary) + gog (wrapper) to /sandbox/.config/gogcli/bin/ —
+# a subdirectory registered as read-only in filesystem_policy. The wrapper reads the
+# token from /sandbox/.openclaw-data/gogcli/access_token (writable).
+
+GOG_BIN_UPLOAD=$(mktemp -d /tmp/gogcli-bin-XXXXXX)
+trap 'rm -rf "$UPLOAD_DIR" "$GOG_BIN_UPLOAD"' EXIT
+
+cp "$GOG_BIN" "$GOG_BIN_UPLOAD/gog-bin"
+chmod +x "$GOG_BIN_UPLOAD/gog-bin"
+
+cat > "$GOG_BIN_UPLOAD/gog" <<'WRAPEOF'
+#!/bin/bash
+# gogcli wrapper — reads access token pushed by host push daemon.
+_GOG_TOKEN="$(cat /sandbox/.openclaw-data/gogcli/access_token 2>/dev/null)" || {
+  echo "gogcli: token not found. Is the push daemon running? Re-run setup.sh." >&2
+  exit 1
+}
+if [ -f /sandbox/.openclaw-data/gogcli/token_expiry ]; then
+  _EXPIRY=$(cat /sandbox/.openclaw-data/gogcli/token_expiry)
+  _NOW=$(date +%s)
+  if [ "$_NOW" -gt "$_EXPIRY" ]; then
+    echo "gogcli: token expired. Push daemon will refresh shortly, or re-run setup.sh." >&2
+    exit 1
+  fi
+fi
+export XDG_CONFIG_HOME=/sandbox/.config
+exec env GOG_ACCESS_TOKEN="$_GOG_TOKEN" /sandbox/.config/gogcli/bin/gog-bin "$@"
+WRAPEOF
+chmod +x "$GOG_BIN_UPLOAD/gog"
+
+echo "Installing gog-bin and gog wrapper to /sandbox/.config/gogcli/bin/..."
+openshell sandbox upload "$SANDBOX" "$GOG_BIN_UPLOAD" /sandbox/.config/gogcli/bin
+
+# -- Add gog to PATH via .bashrc -----------------------------------------------
+
+echo "Adding /sandbox/.config/gogcli/bin to sandbox PATH..."
+openshell sandbox exec -n "$SANDBOX" -- bash -c \
+  'grep -q "gogcli/bin" /sandbox/.bashrc || echo "export PATH=\"/sandbox/.config/gogcli/bin:\$PATH\"" >> /sandbox/.bashrc'
+
+# -- Apply gogcli network policy and filesystem read-only entry ----------------
+#
+# gog-bin lives at /sandbox/.config/gogcli/bin/gog-bin. The parent /sandbox is
+# read_write, so we register the bin/ subdirectory as a more-specific read_only
+# entry. OpenShell's proxy trusts binaries whose containing directory is in the
+# read_only list. Token files in the parent /sandbox/.config/gogcli/ remain writable.
 
 echo "Applying gogcli network policy..."
 
@@ -194,44 +206,35 @@ GOOGLE_BLOCKS=$(awk '
   found { print }
 ' "$SKILL_DIR/policy.yaml")
 
-TOKEN_SERVER_BLOCK=$(cat <<TSEOF
-  google_token_server:
-    name: google_token_server
-    endpoints:
-      - host: ${HOST_IP}
-        port: ${TOKEN_PORT}
-        protocol: rest
-        enforcement: enforce
-        tls: passthrough
-        rules:
-          - allow: { method: GET, path: "/token" }
-          - allow: { method: GET, path: "/health" }
-    binaries:
-      - { path: /usr/bin/curl }
-      - { path: /usr/bin/curl* }
-TSEOF
-)
-
 POLICY_FILE=$(mktemp /tmp/gogcli-policy-XXXXXX.yaml)
+
+# Start with current policy (or a minimal skeleton)
 echo "${CURRENT:-version: 1}" > "$POLICY_FILE"
+
+# Ensure filesystem_policy.read_only includes /sandbox/.config/gogcli/bin
+if ! grep -q "/sandbox/.config/gogcli/bin" "$POLICY_FILE"; then
+  # Insert after the last read_only entry (before read_write: section)
+  sed -i '/^  read_only:/,/^  read_write:/{/^  read_write:/i\  - /sandbox/.config/gogcli/bin
+}' "$POLICY_FILE" 2>/dev/null || true
+  # Fallback: if sed-insert didn't work, append the entry directly after read_only block
+  if ! grep -q "/sandbox/.config/gogcli/bin" "$POLICY_FILE"; then
+    sed -i 's|^  read_write:|  - /sandbox/.config/gogcli/bin\n  read_write:|' "$POLICY_FILE"
+  fi
+fi
+
 if ! grep -q "^network_policies:" "$POLICY_FILE"; then
   echo "" >> "$POLICY_FILE"
   echo "network_policies:" >> "$POLICY_FILE"
 fi
 printf '%s\n' "$GOOGLE_BLOCKS" >> "$POLICY_FILE"
-printf '%s\n' "$TOKEN_SERVER_BLOCK" >> "$POLICY_FILE"
 openshell policy set --policy "$POLICY_FILE" --wait "$SANDBOX"
 rm -f "$POLICY_FILE"
 
 # -- Done ----------------------------------------------------------------------
 
 echo ""
-echo "Done. Token server running on ${HOST_IP}:${TOKEN_PORT} (pid $(cat "$TOKEN_SERVER_PID_FILE" 2>/dev/null || echo '?'))."
-echo "  Log: $HOME/.config/gogcli/token-server.log"
-echo ""
-echo "To verify inside the sandbox:"
-echo "  openshell sandbox connect $SANDBOX"
-echo "  /sandbox/.config/gogcli/gog auth list"
+echo "Done. Push daemon running (log: $HOME/.config/gogcli/push-daemon.log)."
+echo "  GOG_ACCESS_TOKEN is refreshed live via openclaw config set — no network socket exposed."
 echo ""
 echo "Demo prompts:"
 echo "  \"Search my Gmail for unread messages from NVIDIA and summarize them.\""
