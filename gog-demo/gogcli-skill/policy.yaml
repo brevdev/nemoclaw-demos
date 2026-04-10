@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+preset:
+  name: gogcli
+  description: "Google Workspace CLI (gogcli) — Gmail, Calendar, and Drive"
+  notes: |
+    Tokens are pushed into the sandbox filesystem by the host-side push daemon
+    (gog-token-server.py). The sandbox reads the token from a file — no network
+    socket is exposed and no host_services policy is required.
+
+network_policies:
+  google_gmail:
+    name: google_gmail
+    endpoints:
+      - host: gmail.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          # - allow: { method: POST, path: "/**" }
+          # - allow: { method: PUT, path: "/**" }
+          # - allow: { method: PATCH, path: "/**" }
+          # - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_calendar:
+    name: google_calendar
+    endpoints:
+      - host: calendar.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          # - allow: { method: POST, path: "/**" }
+          # - allow: { method: PUT, path: "/**" }
+          # - allow: { method: PATCH, path: "/**" }
+          # - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_drive:
+    name: google_drive
+    endpoints:
+      - host: drive.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          # - allow: { method: POST, path: "/**" }
+          # - allow: { method: PUT, path: "/**" }
+          # - allow: { method: PATCH, path: "/**" }
+          # - allow: { method: DELETE, path: "/**" }
+      # Drive file upload uses a separate endpoint (www.googleapis.com).
+      # Uncomment the block below to enable uploads:
+      # - host: www.googleapis.com
+      #   port: 443
+      #   protocol: rest
+      #   enforcement: enforce
+      #   tls: terminate
+      #   rules:
+      #     - allow: { method: POST, path: "/upload/**" }
+      #     - allow: { method: PUT, path: "/upload/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
