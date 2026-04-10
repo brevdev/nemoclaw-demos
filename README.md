@@ -10,6 +10,7 @@ A repository of guides with examples you can take after a successful [hello-worl
 | [**speech-demo**](speech-demo/speech-stt-guide.md) | Zero-to-hero cookbook for adding speech-to-text to OpenClaw using NVIDIA Parakeet. No GPU required. |
 | [**blender-demo**](blender-demo/blender-openclaw-guide.md) | Connecting Blender to OpenClaw for natural language 3D interactions via MCP. |
 | [**gog-demo**](gog-demo/gog-openclaw-guide.md) | Connecting Google Workspace (Gmail, Calendar, Drive) to OpenClaw via the `gog` CLI. |
+| [**google-workspace-demo**](google-workspace-demo/google-workspace-guide.md) | Full Google Workspace integration (Gmail, Calendar, Drive, Sheets, Contacts, Tasks) with Tier 1 push daemon security. |
 | [**planet-integration-demo**](planet-integration-demo/planet-integration-guide.md) | Planet satellite imagery catalog, tasking cost estimation, and satellite pass availability with Tier 1 proxy security. |
 
 ## Official Resources
