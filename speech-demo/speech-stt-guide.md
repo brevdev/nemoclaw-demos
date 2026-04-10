@@ -171,32 +171,61 @@ openshell policy get $SANDBOX --full | grep -A 5 "parakeet"
 
 You should see the `parakeet_stt` policy block with your host IP.
 
-## Part 6: Install the Parakeet STT Skill
+## Part 6: Upload TOOLS.md
 
-The skill file teaches the OpenClaw agent how to use the Parakeet API for transcription. Upload the skill into the sandbox:
+TOOLS.md teaches the agent how to use the Parakeet API for transcription. It must contain the **hardcoded URL** of the Parakeet service — without it, the agent may try to install Parakeet inside the sandbox (which will fail and hang for minutes).
 
-The SKILL.md contains a `PARAKEET_URL` placeholder that must be replaced with the actual service URL before uploading. This tells the agent exactly where to send requests — without it, the agent may try to install Parakeet inside the sandbox.
+Create the TOOLS.md with your host IP baked in:
 
 ``` bash
-# Create the skill directory
-docker exec $DOCKER_CTR kubectl exec -n openshell $SANDBOX -c agent \
-  -- mkdir -p /sandbox/.openclaw/skills/parakeet-stt
+cat > /tmp/TOOLS.md << EOF
+# Speech-to-Text Instructions
 
-# Replace the placeholder with the actual URL and upload
-sed "s|PARAKEET_URL|http://$HOST_IP:5092|g" speech-demo/parakeet-stt/SKILL.md | \
-  docker exec -i $DOCKER_CTR \
+A Parakeet STT service is running on the host. Use it to transcribe audio files.
+
+## How to Transcribe
+
+Use curl. Do NOT install anything. The service is already running.
+
+### Plain text transcription:
+\`\`\`bash
+curl -s -X POST http://$HOST_IP:5092/v1/audio/transcriptions -F "file=@/path/to/audio.wav" -F "response_format=text"
+\`\`\`
+
+### JSON with timestamps:
+\`\`\`bash
+curl -s -X POST http://$HOST_IP:5092/v1/audio/transcriptions -F "file=@/path/to/audio.wav" -F "response_format=verbose_json"
+\`\`\`
+
+### SRT subtitles:
+\`\`\`bash
+curl -s -X POST http://$HOST_IP:5092/v1/audio/transcriptions -F "file=@/path/to/audio.wav" -F "response_format=srt"
+\`\`\`
+
+## Important
+- Audio files are in /sandbox/.openclaw-data/workspace/
+- Do NOT try to install Parakeet, clone repos, or run Docker
+- The service is at http://$HOST_IP:5092 — just use curl
+- Supported formats: WAV, MP3, OGG, FLAC, M4A, WEBM
+EOF
+```
+
+Upload it to the sandbox workspace:
+
+``` bash
+cat /tmp/TOOLS.md | docker exec -i $DOCKER_CTR \
   kubectl exec -i -n openshell $SANDBOX -c agent \
-  -- sh -c 'cat > /sandbox/.openclaw/skills/parakeet-stt/SKILL.md'
+  -- sh -c 'cat > /sandbox/.openclaw-data/workspace/TOOLS.md'
 ```
 
-Verify the skill was uploaded with the correct URL:
+Verify the URL is correct:
 
 ``` bash
 docker exec $DOCKER_CTR kubectl exec -n openshell $SANDBOX -c agent \
-  -- grep "5092" /sandbox/.openclaw/skills/parakeet-stt/SKILL.md
+  -- grep "5092" /sandbox/.openclaw-data/workspace/TOOLS.md
 ```
 
-You should see curl commands with `http://<your-host-ip>:5092` (not the placeholder).
+You should see curl commands with `http://<your-host-ip>:5092`.
 
 ## Part 7: Test It
 
