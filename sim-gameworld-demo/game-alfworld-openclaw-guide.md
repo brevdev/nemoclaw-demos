@@ -125,6 +125,20 @@ Open the OpenClaw web UI and try these prompts:
 - "What's the current game state?"
 - "Show me the game history."
 
+The screenshot below shows an on-demand game status query — the 3D first-person frame is rendered on the left while available actions and current state appear alongside it:
+
+![On-demand game status query showing the 3D view and available commands](imgs/heartbeat_on_demand_query_game_status.png)
+
+## Automating Game Play with a Cron Job
+
+Instead of driving the agent manually, you can schedule OpenClaw to advance the game on a fixed interval using a cron job. Open the **Jobs** panel in the OpenClaw web UI and create a new job with a prompt such as `"Run 3 steps in the current ALFWorld game and report the score."` Set the interval to however often you want the agent to act (e.g., every 5 minutes):
+
+![Setting up a cron job in the OpenClaw Jobs UI](imgs/setup_cron_job.png)
+
+Once active, the cron job fires on schedule and the agent plays through the game autonomously. You can watch progress in the **Chat** panel, which shows each step, observation, and score update in real time:
+
+![Cron job actively playing ALFWorld — game start and step-by-step output in the Chat panel](imgs/cron_job_in_action_openclaw.png)
+
 ## Available MCP Tools
 
 | Tool | What it does |
