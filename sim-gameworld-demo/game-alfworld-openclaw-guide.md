@@ -10,7 +10,7 @@ At each step, the agent receives a first-person RGB frame from the AI2-THOR 3D r
 |-------------|---------|
 | Running OpenClaw sandbox | A working NemoClaw sandbox with OpenClaw. See [NemoClaw hello-world setup](https://github.com/NVIDIA/NemoClaw). |
 | ALFWorld data | Downloaded via `alfworld-download` (see Part 1). |
-| `INFERENCE_API_KEY` | NVIDIA API key for the VLM. Get one at [build.nvidia.com](https://build.nvidia.com). |
+| `NVIDIA_API_KEY` | NVIDIA API key for the VLM. Get one at [build.nvidia.com](https://build.nvidia.com). |
 | Xvfb | Virtual display for the AI2-THOR renderer. `sudo apt-get install xvfb` |
 | `uv` | Python package manager. See the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/). |
 
@@ -48,13 +48,13 @@ Add the export to your `.bashrc` or `.env` so it persists across sessions.
 ### Step 3: Set your NVIDIA API key
 
 ```bash
-export INFERENCE_API_KEY="nvapi-..."
+export NVIDIA_API_KEY="nvapi-..."
 ```
 
 Or write it to a `.env` file (loaded automatically at startup):
 
 ```bash
-echo 'INFERENCE_API_KEY=nvapi-...' > .env
+echo 'NVIDIA_API_KEY=nvapi-...' > .env
 ```
 
 ## Part 2: Start the Visual MCP Server (Host)
