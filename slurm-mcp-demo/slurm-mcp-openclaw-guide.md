@@ -70,6 +70,8 @@ You should see:
 [mcp-server] Reachable from sandbox via host's LAN/bridge IP on that port.
 ```
 
+![MCP server starting up and confirming it is reachable on port 9000](imgs/serve_fake_cluster_via_mcp_server.png)
+
 To keep it running across SSH disconnects:
 
 ```bash
@@ -111,6 +113,10 @@ openshell sandbox upload {sandbox_name} \
 
 > The path `/sandbox/.openclaw/workspace/skills/` exists once OpenClaw is onboarded inside the sandbox.
 
+After uploading, you can ask the agent to inspect the skill to confirm it is wired up correctly before running any Slurm queries:
+
+![OpenClaw agent verifying the uploaded slurm-cluster-mcp skill structure](imgs/ensure_the_custom_skills_are_ready.png)
+
 ## Part 4: Connect OpenClaw to the MCP Server
 
 Inside the sandbox, point the client at the host server and start the REPL:
@@ -136,6 +142,14 @@ Open the OpenClaw web UI and try these prompts:
 - "Show me what jobs are currently running."
 - "What are my compute account limits?"
 - "How much compute have I used this month?"
+
+The screenshot below shows the agent responding to a GPU availability query — it calls `sinfo` under the hood and summarises the A100, H100, and CPU partitions:
+
+![Agent responding to a "what GPUs are available" query with partition details](imgs/agent_reponse_to_what_GPUs_are_available.png)
+
+Here the agent handles a job launch request — it allocates GPUs, streams epoch logs via `srun`, and returns a job ID:
+
+![Agent responding to a training job launch query with epoch-level progress](imgs/agent_respond_to_a_job_launch_query.png)
 
 ## Available MCP Tools
 
