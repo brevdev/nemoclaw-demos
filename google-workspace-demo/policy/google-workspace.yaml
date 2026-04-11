@@ -1,0 +1,112 @@
+preset:
+  name: google-workspace
+  description: "Google Workspace access via gog CLI (Gmail, Calendar, Drive, Sheets, Contacts, Tasks)"
+  notes: |
+    Tokens are pushed into the sandbox by the host-side push daemon
+    (gog-push-daemon.py) via openshell sandbox upload. The gog wrapper
+    reads the token from a file. No network socket is exposed.
+
+network_policies:
+  google_gmail:
+    name: google_gmail
+    endpoints:
+      - host: gmail.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_calendar:
+    name: google_calendar
+    endpoints:
+      - host: www.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+      - host: calendar.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_drive:
+    name: google_drive
+    endpoints:
+      - host: drive.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_sheets:
+    name: google_sheets
+    endpoints:
+      - host: sheets.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_contacts:
+    name: google_contacts
+    endpoints:
+      - host: people.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_tasks:
+    name: google_tasks
+    endpoints:
+      - host: tasks.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
