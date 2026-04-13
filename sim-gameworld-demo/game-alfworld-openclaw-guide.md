@@ -92,6 +92,8 @@ Add the following block to your sandbox policy YAML under `network_policies`, th
       - host: host.openshell.internal
         port: 9001
         allowed_ips: [172.17.0.1]
+      - host: 127.0.0.1
+        port: 9001
     binaries:
       - { path: /sandbox/.venv/bin/python }
       - { path: /sandbox/.venv/bin/python3 }
