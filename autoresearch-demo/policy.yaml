@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Network policy for Slurm/SSH MCP access.
+#
+# The agent connects to a host-side mcp-proxy (HTTP/SSE) which bridges to
+# slurm-mcp (Python). The SSH key stays on the host — the agent never sees it.
+#
+# Replace HOST_IP and MCP_PORT with your values. HOST_IP is the Docker bridge
+# gateway IP visible from inside the sandbox (typically 172.29.0.254, resolved
+# from host.openshell.internal in /etc/hosts).
+#
+# The bootstrap.sh script applies this automatically — this file is for reference.
+
+network_policies:
+  ssh_mcp:
+    name: ssh_mcp
+    endpoints:
+      - host: "HOST_IP"       # e.g. 172.29.0.254
+        port: MCP_PORT         # e.g. 9878
+        access: full
+    binaries:
+      - path: /usr/local/bin/node*
+      - path: /usr/bin/node*
+      - path: /usr/bin/curl*
+      - path: /bin/bash*
