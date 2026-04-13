@@ -12,6 +12,7 @@ A repository of guides with examples you can take after a successful [hello-worl
 | [**gog-demo**](gog-demo/gog-openclaw-guide.md) | Connecting Google Workspace (Gmail, Calendar, Drive) to OpenClaw via the `gog` CLI. |
 | [**google-workspace-demo**](google-workspace-demo/google-workspace-guide.md) | Full Google Workspace integration (Gmail, Calendar, Drive, Sheets, Contacts, Tasks) with Tier 1 push daemon security. |
 | [**planet-integration-demo**](planet-integration-demo/planet-integration-guide.md) | Planet satellite imagery catalog, tasking cost estimation, and satellite pass availability with Tier 1 proxy security. |
+| [**nasa-apod-demo**](nasa-apod-demo/nasa-apod-guide.md) | NASA Astronomy Picture of the Day |
 
 ## Official Resources
 
