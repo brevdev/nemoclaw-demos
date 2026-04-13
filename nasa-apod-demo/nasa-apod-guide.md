@@ -1,6 +1,6 @@
 # NASA Astronomy Picture of the Day Demo
 
-Your AI agent explores NASA's astronomy archive — fetching stunning space imagery, explaining celestial objects, and reasoning across photos. The visual hook for any live demo.
+Your AI agent explores NASA's astronomy archive — fetching stunning space imagery, explaining celestial objects, and reasoning across photos.
 
 > **One-line story:** "Let's start with space." Agent fetches today's NASA astronomy photo, explains what it is, and lets the audience click through to a full-screen image.
 
