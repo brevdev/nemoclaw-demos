@@ -61,13 +61,15 @@ curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
 source ~/.bashrc
 ```
 
-Create a Hermes sandbox:
+Create a Hermes sandbox (note the `--agent hermes` flag — this is required, the default is OpenClaw):
 
 ```bash
-nemoclaw onboard
+nemoclaw onboard --agent hermes
 ```
 
 When prompted, choose your inference provider and name the sandbox (e.g. `research`).
+
+> **Important:** This demo requires the Hermes agent, not OpenClaw. The skill paths, memory locations, and mcporter setup are all Hermes-specific. If you already have a sandbox running OpenClaw, create a new one with `--agent hermes`.
 
 ## Part 2: Clone This Repo
 
