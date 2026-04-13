@@ -10,7 +10,7 @@
 #   3. Research + MLOps skills from NousResearch/hermes-agent upstream
 #
 # Usage:
-#   ./setup.sh --sandbox <name> --alias builder=192.168.1.149 --key ~/.ssh/id_ed25519 --user marcelo
+#   ./setup.sh --sandbox <name> --alias gpu-server=<HOST_IP> --key ~/.ssh/id_ed25519 --user <USERNAME>
 #   ./setup.sh --sandbox <name>   # skills + persona only, no SSH/Slurm
 
 set -euo pipefail
@@ -27,7 +27,7 @@ usage() {
   echo "  --sandbox            OpenShell sandbox name (required)"
   echo ""
   echo "Slurm/SSH MCP options (optional — omit all to install skills only):"
-  echo "  --alias <name>=<ip>  SSH alias (e.g. --alias builder=192.168.1.149)"
+  echo "  --alias <name>=<ip>  SSH alias (e.g. --alias gpu-server=<HOST_IP>)"
   echo "  --key <path>         SSH private key (stays on host, never enters sandbox)"
   echo "  --password <pass>    SSH password (use --key OR --password, not both)"
   echo "  --user <user>        SSH username"
@@ -36,7 +36,7 @@ usage() {
   echo "  --mcp-port <port>    MCP proxy port on host (default: 9878)"
   echo ""
   echo "Examples:"
-  echo "  $0 --sandbox research --alias builder=192.168.1.149 --key ~/.ssh/id_ed25519 --user marcelo"
+  echo "  $0 --sandbox research --alias gpu-server=<HOST_IP> --key ~/.ssh/id_ed25519 --user <USERNAME>"
   echo "  $0 --sandbox research   # skills + persona only"
   exit 1
 }

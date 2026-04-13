@@ -14,7 +14,7 @@
 # Usage:
 #   ./ssh-skill/bootstrap.sh \
 #     --sandbox <sandbox-name> \
-#     --alias builder=192.168.1.149 \
+#     --alias builder=<HOST_IP> \
 #     [--key <path-to-ssh-private-key>] \
 #     [--user <ssh-user>] \
 #     [--user-root <remote-home>] \
@@ -44,7 +44,7 @@ usage() {
   echo "         [--port <port>] [--mcp-port <port>]"
   echo ""
   echo "  --sandbox    OpenShell sandbox name"
-  echo "  --alias      SSH host alias (e.g. --alias builder=192.168.1.149)"
+  echo "  --alias      SSH host alias (e.g. --alias builder=<HOST_IP>)"
   echo "  --key        Path to SSH private key (stays on host, never enters sandbox)"
   echo "  --password   SSH password (use --key OR --password, not both)"
   echo "  --user       SSH username"
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
       ALIAS_NAME="${2%%=*}"
       ALIAS_HOST="${2#*=}"
       if [[ "$ALIAS_NAME" == "$2" || -z "$ALIAS_HOST" ]]; then
-        echo "Error: --alias must be name=host (e.g. builder=192.168.1.149)"
+        echo "Error: --alias must be name=host (e.g. builder=<HOST_IP>)"
         exit 1
       fi
       shift 2 ;;
@@ -266,7 +266,7 @@ That's it. Just run that in the terminal. Examples:
 \`\`\`bash
 /sandbox/bin/mcporter call ${ALIAS_NAME}.run_shell_command command="hostname"
 /sandbox/bin/mcporter call ${ALIAS_NAME}.run_shell_command command="nvidia-smi"
-/sandbox/bin/mcporter call ${ALIAS_NAME}.run_shell_command command="ls -la /home/${SSH_USER:-marcelo}"
+/sandbox/bin/mcporter call ${ALIAS_NAME}.run_shell_command command="ls -la /home/${SSH_USER:-$USER}"
 /sandbox/bin/mcporter call ${ALIAS_NAME}.run_shell_command command="cd /workspace && python train.py --lr 0.001"
 \`\`\`
 
@@ -292,7 +292,7 @@ All called the same way — \`/sandbox/bin/mcporter call ${ALIAS_NAME}.<tool> <a
 
 - \`mcporter\` is already installed at \`/sandbox/bin/mcporter\` — do NOT install anything
 - Run it as a bash command in the terminal — it is NOT a Python library
-- Commands run as user \`${SSH_USER:-marcelo}\` on ${ALIAS_NAME} (${ALIAS_HOST})
+- Commands run as user \`${SSH_USER:-$USER}\` on ${ALIAS_NAME} (${ALIAS_HOST})
 - Timeout: 120s — for long jobs use \`submit_job\` instead of \`run_shell_command\`
 SKILLEOF
 
