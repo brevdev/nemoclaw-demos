@@ -121,6 +121,6 @@ if [[ "$HAS_SSH" == true ]]; then
 fi
 echo ""
 echo "Try:"
-echo '  "Check GPU availability on builder"'
+echo '  "Check GPU availability on the cluster"'
 echo '  "Search arxiv for recent papers on mixture of experts"'
-echo '  "Set up an autoresearch loop to optimize train.py on builder"'
+echo '  "Set up an autoresearch loop to optimize train.py on the cluster"'

@@ -307,7 +307,7 @@ echo "--- Verify ---"
 
 RESULT=$(openshell sandbox exec -n "$SANDBOX" -- bash -c '/sandbox/bin/mcporter call '"$ALIAS_NAME"'.run_shell_command command="hostname" 2>&1' 2>&1)
 
-if echo "$RESULT" | grep -q "builder\|$ALIAS_HOST"; then
+if echo "$RESULT" | grep -q "$ALIAS_HOST"; then
   echo "  mcporter call $ALIAS_NAME.run_shell_command command=\"hostname\" → OK"
   echo "$RESULT" | grep -v "Warning\|UNDICI"
 else

@@ -11,21 +11,21 @@ This is a bash command — run it in the terminal. Do NOT install any MCP librar
 ## How to run a command
 
 ```bash
-/sandbox/bin/mcporter call builder.run_shell_command command="<your command here>"
+/sandbox/bin/mcporter call <alias>.run_shell_command command="<your command here>"
 ```
 
 That's it. Just run that in the terminal. Examples:
 
 ```bash
-/sandbox/bin/mcporter call builder.run_shell_command command="hostname"
-/sandbox/bin/mcporter call builder.run_shell_command command="nvidia-smi"
-/sandbox/bin/mcporter call builder.run_shell_command command="ls -la /home/user"
-/sandbox/bin/mcporter call builder.run_shell_command command="cd /workspace && python train.py --lr 0.001"
+/sandbox/bin/mcporter call <alias>.run_shell_command command="hostname"
+/sandbox/bin/mcporter call <alias>.run_shell_command command="nvidia-smi"
+/sandbox/bin/mcporter call <alias>.run_shell_command command="ls -la /home/user"
+/sandbox/bin/mcporter call <alias>.run_shell_command command="cd /workspace && python train.py --lr 0.001"
 ```
 
 ## Other available tools
 
-All called the same way — `/sandbox/bin/mcporter call builder.<tool> <args>`:
+All called the same way — `/sandbox/bin/mcporter call <alias>.<tool> <args>`:
 
 | Tool | What it does |
 |------|-------------|
