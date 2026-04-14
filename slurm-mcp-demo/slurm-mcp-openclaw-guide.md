@@ -24,7 +24,7 @@ The connection uses **MCP (Model Context Protocol)**. A lightweight Python serve
 > in the code sample area), the model works with `ChatNVIDIA`. If only Python / Node / Shell
 > tabs are shown, the model is **not** compatible and will fail at runtime.
 >
-> The default model used in this demo is `z-ai/glm5`, which has the LangChain tab.
+> The default model used in this demo is `nvidia/llama-3.3-nemotron-super-49b-v1.5`, which has the LangChain tab.
 > To swap models, edit `fake_cluster_mcp_server.py` and replace the `model=` value —
 > but only with a model confirmed to have the LangChain tab.
 
@@ -187,7 +187,7 @@ openclaw tui - ws://127.0.0.1:18789 - agent main - session main
 | `sacctmgr` | Returns user account associations |
 | `sreport` | Returns a fake CPU-minute utilisation report |
 
-The LLM (`z-ai/glm5` via `ChatNVIDIA`) runs server-side — the sandbox client sends only text queries and receives text results. No API key is needed inside the sandbox.
+The LLM (`nvidia/llama-3.3-nemotron-super-49b-v1.5` via `ChatNVIDIA`) runs server-side — the sandbox client sends only text queries and receives text results. No API key is needed inside the sandbox.
 
 ## Changing the Model
 
@@ -227,7 +227,7 @@ _llm = ChatNVIDIA(
 
 ### nemoclaw onboard: validation timeout
 
-During `nemoclaw onboard`, step **[3/8] Configuring inference** makes a live inference call to validate the selected model. Thinking/reasoning models such as `z-ai/glm5` (GLM-5) can take 10–30 seconds to respond on a non-streaming request, occasionally exceeding the 30-second internal timeout and producing:
+During `nemoclaw onboard`, step **[3/8] Configuring inference** makes a live inference call to validate the selected model. Thinking/reasoning models such as `nvidia/llama-3.3-nemotron-super-49b-v1.5` (nemotron model) can take ~10 seconds to respond on a non-streaming request, occasionally exceeding the 30-second internal timeout and producing:
 
 ```
 NVIDIA Endpoints endpoint validation failed.
