@@ -2,6 +2,18 @@
 
 Give your OpenClaw agent the ability to read, search, and draft emails directly from an Outlook `.pst` file — all through a secure MCP server running on the host. The sandbox can call 7 natural-language tools while remaining completely isolated from the host filesystem and Python runtime.
 
+> **What is a `.pst` file?**
+> A `.pst` (Personal Storage Table) file is an Outlook data file that stores a local copy of your mailbox — emails, contacts, calendar items, and folder structure. You typically encounter one when:
+> - You export or archive mail from Outlook ("File → Open & Export → Import/Export")
+> - Your organization archives old mailboxes off the live Exchange/M365 server
+> - You receive a mailbox export from IT or legal for review
+>
+> **Limitations to be aware of:**
+> This demo is designed for **read-only archive search**. The `.pst` file is a static snapshot — it is not synced with a live Outlook account. That means:
+> - Search, read, and extract operations work great and give accurate results for the archived data.
+> - The `draft_email` tool writes a draft file locally (`.msg`/`.eml`) but does **not** send it or sync it back to Outlook. If you need to actually send the draft, you must open it in Outlook separately.
+> - Any changes (drafts, folder moves) you make to the `.pst` won't be reflected in your live Outlook inbox unless you explicitly re-import.
+
 ---
 
 ## What You Get
