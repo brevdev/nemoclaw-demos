@@ -1,0 +1,84 @@
+---
+title: "Master Symbols Database"
+version: "1.0"
+date: "2026-03-19"
+format: "yaml-optimized"
+human_reference: "MASTER_SYMBOLS_PRODUCTION.md"
+---
+
+database:
+  total_symbols: 12428
+  sources:
+    nasdaq: 5393
+    nyse: 7035
+  coverage: "100% current US-traded equities"
+
+files:
+  source: 
+    path: "data/master_symbols.json"
+    size: "193.4 KB"
+    format: "json"
+  production:
+    path: "data/master_symbols.parquet"
+    size: "39.4 KB"
+    format: "parquet"
+    compression: "79.6%"
+    lookup_time: "<1ms"
+
+schema:
+  columns:
+    - name: symbol
+      type: string
+      example: "MSFT"
+    - name: exchange
+      type: string
+      enum: ["NASDAQ", "NYSE"]
+    - name: category
+      type: string
+      example: "NASDAQ Listed"
+
+performance:
+  load_time_json: "~100ms"
+  load_time_parquet: "~10ms"
+  memory_json: "~200KB"
+  memory_parquet: "~50KB"
+  symbol_lookup: "<1ms"
+  exchange_filter: "<1ms"
+  bulk_validation_100: "~5ms"
+
+data_source:
+  primary: "NASDAQ FTP"
+  location: "ftp.nasdaqtrader.com/SymbolDirectory/"
+  files_used:
+    - "nasdaqlisted.txt"
+    - "otherlisted.txt"
+  update_frequency: "Quarterly"
+  next_update: "2026-06-19"
+
+usage:
+  load_parquet: |
+    import polars as pl
+    df = pl.read_parquet('data/master_symbols.parquet')
+    all_symbols = set(df['symbol'].to_list())
+    'MSFT' in all_symbols  # <1ms
+  
+  load_json: |
+    import json
+    with open('data/master_symbols.json') as f:
+      data = json.load(f)
+    symbols = data['symbols']
+
+exclusions:
+  forex: "Not typical in brokerage portfolios"
+  crypto: "Optional, requires separate data source"
+  bonds: "Use bond ETFs (LQD, HYG, MUB, TLT, etc.) included in this database"
+  options: "Listed separately if needed"
+
+validation:
+  equity_holdings: 218
+  coverage_check: "100%"
+  status: "All holdings in master database"
+
+update_script: "scripts/fetch_nasdaq_ftp_symbols.py"
+conversion_script: "scripts/convert_symbols_to_parquet.py"
+

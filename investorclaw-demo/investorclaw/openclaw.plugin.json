@@ -1,0 +1,95 @@
+{
+  "id": "investorclaw",
+  "name": "InvestorClaw",
+  "description": "Portfolio analysis skill for OpenClaw agents. Provides holdings snapshots, performance metrics, bond analytics (YTM, duration, FRED-backed benchmarks), analyst consensus ratings, news correlation, and CSV/Excel reports. Compact token-aware stdout keeps sessions within 128K+ context windows. Optional local LLM consultation (Ollama) adds synthesis and key-insight enrichment. Built-in financial advice guardrails enforce educational-only output.",
+  "version": "1.0.0",
+  "homepage": "https://github.com/perlowja/InvestorClaw",
+  "repository": "https://github.com/perlowja/InvestorClaw",
+  "license": "MIT",
+  "configSchema": {
+    "FINNHUB_KEY": {
+      "type": "string",
+      "label": "Finnhub API Key",
+      "description": "Real-time quotes and analyst ratings. Free key at https://finnhub.io/register",
+      "secret": true,
+      "required": false
+    },
+    "NEWSAPI_KEY": {
+      "type": "string",
+      "label": "NewsAPI Key",
+      "description": "News correlation for portfolio holdings. Free key at https://newsapi.org/register",
+      "secret": true,
+      "required": false
+    },
+    "MASSIVE_API_KEY": {
+      "type": "string",
+      "label": "Massive API Key",
+      "description": "Market data via Massive (polygon.io-compatible). Sign up at https://polygon.io/dashboard/signup",
+      "secret": true,
+      "required": false
+    },
+    "ALPHA_VANTAGE_KEY": {
+      "type": "string",
+      "label": "Alpha Vantage API Key",
+      "description": "Supplemental price data. Free key at https://www.alphavantage.co/support/#api-key",
+      "secret": true,
+      "required": false
+    },
+    "FRED_API_KEY": {
+      "type": "string",
+      "label": "FRED API Key",
+      "description": "Treasury & TIPS benchmark yields (St. Louis Fed). Free key at https://fred.stlouisfed.org/docs/api/api_key.html",
+      "secret": true,
+      "required": false
+    },
+    "INVESTOR_CLAW_REPORTS_DIR": {
+      "type": "string",
+      "label": "Reports Output Directory",
+      "description": "Where analysis JSON, CSV, and Excel reports are saved. Defaults to ~/portfolio_reports/",
+      "required": false,
+      "default": "~/portfolio_reports"
+    },
+    "INVESTOR_CLAW_PORTFOLIO_DIR": {
+      "type": "string",
+      "label": "Portfolio Files Directory",
+      "description": "Directory containing your portfolio CSV/Excel files. Defaults to the skill's portfolios/ subdirectory.",
+      "required": false,
+      "default": ""
+    },
+    "INVESTORCLAW_CONSULTATION_ENABLED": {
+      "type": "boolean",
+      "label": "Enable Local LLM Consultation",
+      "description": "Offload heavy portfolio synthesis to a local Ollama model. When disabled, InvestorClaw uses keyword heuristics (still fully functional, less nuanced).",
+      "required": false,
+      "default": false
+    },
+    "INVESTORCLAW_CONSULTATION_ENDPOINT": {
+      "type": "string",
+      "label": "Ollama Endpoint",
+      "description": "URL of your Ollama server. Defaults to http://localhost:11434. Can be a local or remote host.",
+      "required": false,
+      "default": "http://localhost:11434"
+    },
+    "INVESTORCLAW_CONSULTATION_MODEL": {
+      "type": "string",
+      "label": "Consultation Model",
+      "description": "Ollama model for portfolio synthesis. Default: gemma4-consult (tuned gemma4:e4b derivative, ~65 tok/s, requires 12+ GB VRAM, CUDA 8.0+). Also tested: gemma4:e4b, nemotron-3-nano, qwen2.5:14b. Run /portfolio setup to auto-detect available models.",
+      "required": false,
+      "default": "gemma4-consult"
+    },
+    "INVESTORCLAW_CONSULTATION_HMAC_KEY": {
+      "type": "string",
+      "label": "Consultation HMAC Key",
+      "description": "HMAC-SHA256 signing key for synthesis fingerprints. Auto-generated on first run if not set. Used to verify that consultation output has not been fabricated or modified.",
+      "secret": true,
+      "required": false,
+      "default": ""
+    }
+  },
+  "openclaw": {
+    "compat": {"pluginApi": ">=2026.0.0"},
+    "extensions": ["./dist/index.js"],
+    "skills": ["./"],
+    "emoji": "📊"
+  }
+}

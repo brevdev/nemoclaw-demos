@@ -1,0 +1,86 @@
+# Machine-optimized documentation index
+# Compression phases: 0=Active, 1=Recent, 2=Archived, 3=Old
+# For agent efficiency: read this instead of traversing file system
+
+version: 1.0
+index_format: "yaml"
+context_optimization: "4-phase compression (Phase 0=Active, 1=Recent, 2=Archived, 3=Cold)"
+model_requirements:
+  minimum: 128000  # Required for basic operations
+  recommended: 200000  # For full feature support
+  optimal: 1000000  # For complex agentic operations
+  recommended_models:
+    - "xAI Grok 4.1-reasoning (2M context)"
+    - "Google Gemini (1M+ context)"
+    - "Anthropic Claude (200K context)"
+    - "OpenAI GPT-5.x (200K+ estimated)"
+
+phase_0_active:
+  description: "Frequently accessed by agents/users"
+  context_size: "minimal"
+  files:
+    - path: "README.md"
+      purpose: "User-facing disclaimer + quick start"
+      agent_read: false  # For humans only
+      fallback_ref: ".doc-index.yaml"
+    
+    - path: "MASTER_SYMBOLS_PRODUCTION.md"
+      purpose: "Symbol database documentation"
+      agent_read: true
+      context_lines: 50
+      key_sections: ["Overview", "Usage", "Performance"]
+    
+    - path: "scripts/guardrails.yaml"
+      purpose: "Safety guardrails configuration"
+      agent_read: true
+      format: "yaml"
+      context_lines: 80
+
+phase_1_recent:
+  description: "Accessed occasionally, lower priority"
+  context_size: "reference only"
+  files:
+    - path: "INSTALL_OPENCLAW.md"
+      purpose: "Setup instructions"
+      agent_read: true
+      context_lines: 20  # Summary only
+    
+    - path: "PORTFOLIO_FEATURES_GUIDE.md"
+      purpose: "Feature overview"
+      agent_read: true
+      context_lines: 30
+
+phase_2_archived:
+  description: "Rarely accessed, deep details"
+  context_size: "skip by default"
+  locations:
+    - "docs/integration/"
+    - "docs/setup/"
+    - "docs/DEEP_ANALYSIS.md"
+
+phase_3_cold:
+  description: "Historical/deprecated documentation"
+  context_size: "never load"
+  note: "Consult via file system if needed"
+
+compression_rules:
+  rule_1: "Load only phase_0_active by default"
+  rule_2: "Reference phase_1_recent with YAML summary, not full content"
+  rule_3: "Skip phase_2_archived unless explicitly requested"
+  rule_4: "Never load phase_3_cold without explicit path"
+  rule_5: "Use this index file instead of traversing /docs/"
+
+agent_guidelines:
+  - "Read this file first to understand document structure"
+  - "Use YAML format for all configuration/index files"
+  - "Fallback to file system only if .doc-index.yaml is stale"
+  - "For users: refer to README.md for disclaimers"
+  - "For agents: refer to guardrails.yaml for safety rules"
+
+key_references:
+  symbols: "MASTER_SYMBOLS_PRODUCTION.md"
+  safety: "scripts/guardrails.yaml"
+  features: "PORTFOLIO_FEATURES_GUIDE.md"
+  setup: "INSTALL_OPENCLAW.md"
+  scripts: "See scripts/ directory, use script --help"
+

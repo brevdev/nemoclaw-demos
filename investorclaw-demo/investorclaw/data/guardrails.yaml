@@ -1,0 +1,81 @@
+# Machine-optimized guardrails configuration
+# Used by guardrails.py - minimal comments for agent efficiency
+
+version: "1.0"
+compression: "4-phase"  # Phase 0: active rules, Phase 1-3: archived
+
+guardrails:
+  output_disclaimer:
+    enabled: true
+    template_key: "educational_only"
+    required_fields: ["disclaimer", "is_investment_advice", "consult_professional"]
+    is_investment_advice: false
+
+  suitability_ban:
+    enabled: true
+    reason: "Tool lacks user context: age, income, risk tolerance, goals, tax situation, existing assets, insurance needs, estate plans"
+    patterns:
+      - "suitable for you"
+      - "right for your situation"
+      - "good fit for your"
+      - "appropriate for your"
+      - "matches your profile"
+      - "fits your needs"
+      - "suitability"
+      - "recommend for you"
+      - "is perfect for you"
+      - "is right for you"
+
+  tax_advice_ban:
+    enabled: true
+    reason: "Tax is highly individual: bracket, status, state/local, capital gains, prior years"
+    patterns:
+      - "you should harvest"
+      - "harvest your losses"
+      - "your tax bracket"
+      - "for your taxes"
+      - "you owe"
+      - "your capital gains"
+      - "defer your taxes"
+      - "minimize your taxes"
+      - "your tax liability"
+
+  recommendation_ban:
+    enabled: true
+    reason: "Specific recommendations require suitability assessment (banned)"
+    patterns:
+      - "buy"
+      - "sell"
+      - "hold"
+      - "increase"
+      - "decrease"
+      - "allocate to"
+
+  certainty_ban:
+    enabled: true
+    reason: "Markets are unpredictable; tool cannot guarantee outcomes"
+    forbidden_words: ["will", "must", "always", "never", "guaranteed", "prove", "certain"]
+    encouraged_words: ["may", "suggest", "indicate", "could", "possible"]
+
+  unit_consistency:
+    enabled: true
+    reason: "Avoid confusing daily metrics with annual, percentages with amounts"
+    checks: ["daily_vs_annual", "percentage_format", "currency_format"]
+
+agent_safety_rules:
+  - "All outputs must be labeled educational/informational"
+  - "Block suitability assessments (tool lacks user context)"
+  - "Block personalized tax advice (highly individual)"
+  - "Block specific stock recommendations (requires suitability)"
+  - "Do not claim certainty (use 'may', 'suggest', not 'will')"
+  - "Do not confuse units (state daily vs annual explicitly)"
+  - "Always include disclaimers before analysis"
+  - "Always verify data freshness before use"
+
+data_freshness:
+  warning_threshold_hours: 24
+  critical_threshold_hours: 72
+
+output_validation:
+  strict: true  # Reject if any guardrail violated
+  log_violations: true
