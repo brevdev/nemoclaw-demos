@@ -1,6 +1,6 @@
 preset:
   name: google-workspace
-  description: "Google Workspace access via gog CLI (Gmail, Calendar, Drive, Sheets, Contacts, Tasks)"
+  description: "Google Workspace access via gog CLI (Gmail, Calendar, Drive, Docs, Sheets, Contacts, Tasks)"
   notes: |
     Tokens are pushed into the sandbox by the host-side push daemon
     (gog-push-daemon.py) via openshell sandbox upload. The gog wrapper
@@ -63,6 +63,21 @@ network_policies:
           - allow: { method: PUT, path: "/**" }
           - allow: { method: PATCH, path: "/**" }
           - allow: { method: DELETE, path: "/**" }
+    binaries:
+      - { path: /sandbox/.config/gogcli/bin/gog-bin }
+
+  google_docs:
+    name: google_docs
+    endpoints:
+      - host: docs.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
     binaries:
       - { path: /sandbox/.config/gogcli/bin/gog-bin }
 
