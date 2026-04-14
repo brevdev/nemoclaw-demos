@@ -170,15 +170,34 @@ The skill's client script (`scripts/pst_client.py`) requires `fastmcp` to connec
 ```bash
 nemoclaw my-assistant connect
 # Inside the sandbox:
-pip install fastmcp
-```
-
-Or use a venv if you prefer to keep the sandbox environment clean:
-
-```bash
 python3 -m venv /sandbox/.venv
 /sandbox/.venv/bin/pip install fastmcp
 ```
+
+> **Why the venv?** The sandbox policy (`sandbox_policy.yaml`) restricts PyPI access to specific trusted binaries. A bare `pip install` using the system Python would be blocked. The relevant section of the policy is:
+>
+> ```yaml
+> pypi:
+>   name: pypi
+>   endpoints:
+>     - { host: pypi.org, port: 443 }
+>     - { host: files.pythonhosted.org, port: 443 }
+>     - { host: github.com, port: 443 }
+>     - { host: objects.githubusercontent.com, port: 443 }
+>     - { host: api.github.com, port: 443 }
+>     - { host: downloads.python.org, port: 443 }
+>   binaries:
+>     - { path: /sandbox/.venv/bin/python }
+>     - { path: /sandbox/.venv/bin/python3 }
+>     - { path: /sandbox/.venv/bin/pip }
+>     - { path: /app/.venv/bin/python }
+>     - { path: /app/.venv/bin/python3 }
+>     - { path: /app/.venv/bin/pip }
+>     - { path: /usr/local/bin/uv }
+>     - { path: "/sandbox/.uv/python/**" }
+> ```
+>
+> Only the binaries listed above can reach PyPI — always install into `/sandbox/.venv` (or use `uv`) to stay within the allowed binaries.
 
 ### Verify the skill is wired up
 
