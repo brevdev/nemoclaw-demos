@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// One-time OAuth2 setup for Gmail + Google Calendar APIs.
-// Run on the host: node ~/gmail-oauth-setup.js
+// One-time OAuth2 setup for Google Workspace APIs.
+// Run on the host: node ./gmail-oauth-setup.js
 //
 // Prerequisites:
 //   1. Go to https://console.cloud.google.com
 //   2. Create a project (or select existing)
-//   3. Enable APIs: APIs & Services → Library → enable Gmail, Calendar, Drive, Sheets, People, Tasks APIs
+//   3. Enable APIs: APIs & Services → Library → enable Gmail, Calendar, Drive, Docs, Sheets, People, Tasks APIs
 //   4. Create OAuth credentials: APIs & Services → Credentials → Create Credentials → OAuth client ID
 //      - Application type: Desktop app
 //      - Copy client_id and client_secret
 //   5. Configure OAuth consent screen: APIs & Services → OAuth consent screen
-//      - Add scopes: mail.google.com, calendar, drive, spreadsheets, contacts.readonly, tasks
+//      - Add scopes: mail.google.com, calendar, drive, documents, spreadsheets, contacts.readonly, tasks
 //      - Add your Gmail address as a test user
 //   6. Run this script with your client_id and client_secret
 
@@ -26,6 +26,7 @@ const SCOPES = [
   "https://mail.google.com/",
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/contacts.readonly",
   "https://www.googleapis.com/auth/tasks",
@@ -57,7 +58,7 @@ function httpsPost(urlStr, body) {
 }
 
 async function main() {
-  console.log("\n  Google OAuth2 Setup for NemoClaw (Gmail + Calendar + Drive + Sheets + Contacts + Tasks)\n");
+  console.log("\n  Google OAuth2 Setup for NemoClaw (Gmail + Calendar + Drive + Docs + Sheets + Contacts + Tasks)\n");
 
   let creds = {};
   try { creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")); } catch {}
@@ -128,11 +129,11 @@ async function main() {
 
   fs.writeFileSync(CREDS_PATH, JSON.stringify(creds, null, 2) + "\n");
   console.log(`  Saved to ${CREDS_PATH}`);
-  console.log("\n  Google OAuth2 setup complete (Gmail + Calendar + Drive + Sheets + Contacts + Tasks). Credentials:");
+  console.log("\n  Google OAuth2 setup complete (Gmail + Calendar + Drive + Docs + Sheets + Contacts + Tasks). Credentials:");
   console.log(`    GOOGLE_CLIENT_ID:      ${clientId.substring(0, 20)}...`);
   console.log(`    GOOGLE_CLIENT_SECRET:  ${clientSecret.substring(0, 8)}...`);
   console.log(`    GOOGLE_REFRESH_TOKEN:  ${tokens.refresh_token.substring(0, 20)}...`);
-  console.log("\n  You can now add the gmail+calendar policy and install the skills.\n");
+  console.log("\n  You can now run ./install.sh to deploy the integration.\n");
 }
 
 main().catch((e) => { console.error("Error:", e.message); process.exit(1); });

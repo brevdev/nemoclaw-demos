@@ -1,12 +1,25 @@
 ---
 name: gog
-description: "Google Workspace CLI at /sandbox/.config/gogcli/bin/gog. Use when: user asks about email, inbox, send email, reply, drafts, archive, calendar events, schedule meetings, check availability, RSVP, focus time, out of office, Drive files, upload, download, share, Google Sheets, read spreadsheet, write cells, contacts, lookup, tasks, to-do list. Covers Gmail, Calendar, Drive, Sheets, Contacts, Tasks. Run as: /sandbox/.config/gogcli/bin/gog <subcommand>."
+description: "Google Workspace CLI at /sandbox/.config/gogcli/bin/gog. Use when: user asks about email, inbox, send email, reply, drafts, archive, calendar events, schedule meetings, check availability, RSVP, focus time, out of office, Drive files, upload, download, share, Google Docs, read document, write document, edit doc, Google Sheets, read spreadsheet, write cells, contacts, lookup, tasks, to-do list. Covers Gmail, Calendar, Drive, Docs, Sheets, Contacts, Tasks. Run as: /sandbox/.config/gogcli/bin/gog <subcommand>."
 ---
 
 # gog -- Google Workspace CLI
 
-Access Gmail, Google Calendar, Google Drive, Google Sheets, Google Contacts, and Google Tasks.
+Access Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, Google Contacts, and Google Tasks.
 All commands output JSON. Binary: `/sandbox/.config/gogcli/bin/gog`.
+
+## Shortcuts
+
+These top-level aliases save typing for the most common actions:
+
+```bash
+/sandbox/.config/gogcli/bin/gog send --to a@co.com --subject "Hi" --body-html "<p>Hello</p>"   # gmail send
+/sandbox/.config/gogcli/bin/gog ls                            # drive ls
+/sandbox/.config/gogcli/bin/gog search "quarterly report"     # drive search
+/sandbox/.config/gogcli/bin/gog download <fileId>             # drive download
+/sandbox/.config/gogcli/bin/gog upload /tmp/file.pdf          # drive upload
+/sandbox/.config/gogcli/bin/gog me                            # show your Google profile
+```
 
 ## When to Use
 
@@ -19,6 +32,9 @@ All commands output JSON. Binary: `/sandbox/.config/gogcli/bin/gog`.
 - "Am I free tomorrow between 2-4pm?"
 - "Set focus time Thursday afternoon"
 - "Upload this file to Drive" / "Share it with X"
+- "Read the contents of this Google Doc"
+- "Create a Google Doc with these notes"
+- "Find and replace 'old text' with 'new text' in the doc"
 - "Read cells A1:D10 from the budget spreadsheet"
 - "Add a row to the sales tracker sheet"
 - "Look up Sarah's email in my contacts"
@@ -38,11 +54,11 @@ All commands output JSON. Binary: `/sandbox/.config/gogcli/bin/gog`.
 # Read a full thread (all messages)
 /sandbox/.config/gogcli/bin/gog gmail thread get <threadId>
 
-# Send email
-/sandbox/.config/gogcli/bin/gog gmail send --to recipient@example.com --subject "Subject" --body "Message body"
+# Send email (use --body-html for proper formatting)
+/sandbox/.config/gogcli/bin/gog gmail send --to recipient@example.com --subject "Subject" --body-html "<p>Message body here.</p>"
 
 # Send with CC, BCC
-/sandbox/.config/gogcli/bin/gog gmail send --to a@co.com --cc b@co.com --bcc c@co.com --subject "Update" --body "See below"
+/sandbox/.config/gogcli/bin/gog gmail send --to a@co.com --cc b@co.com --bcc c@co.com --subject "Update" --body-html "<p>See below.</p>"
 
 # Send with attachment
 /sandbox/.config/gogcli/bin/gog gmail send --to user@example.com --subject "Report" --body "See attached" --attach /tmp/file.pdf
@@ -160,6 +176,12 @@ All commands output JSON. Binary: `/sandbox/.config/gogcli/bin/gog`.
 # List permissions
 /sandbox/.config/gogcli/bin/gog drive permissions <fileId>
 
+# Delete a file
+/sandbox/.config/gogcli/bin/gog drive delete <fileId>
+
+# Get a web URL for a file
+/sandbox/.config/gogcli/bin/gog drive url <fileId>
+
 # List shared drives
 /sandbox/.config/gogcli/bin/gog drive drives
 ```
@@ -233,23 +255,67 @@ All commands output JSON. Binary: `/sandbox/.config/gogcli/bin/gog`.
 /sandbox/.config/gogcli/bin/gog tasks delete <tasklistId> <taskId>
 ```
 
-## Docs / Slides (export via Drive)
+## Docs
 
 ```bash
-# Download a Google Doc as PDF
-/sandbox/.config/gogcli/bin/gog drive download <docId> --format pdf
+# Read a Google Doc as plain text
+/sandbox/.config/gogcli/bin/gog docs cat <docId>
 
-# Download as DOCX
-/sandbox/.config/gogcli/bin/gog drive download <docId> --format docx
+# Get doc metadata (title, revision, link)
+/sandbox/.config/gogcli/bin/gog docs info <docId>
+
+# Show document structure with numbered paragraphs
+/sandbox/.config/gogcli/bin/gog docs structure <docId>
+
+# Create a new Google Doc
+/sandbox/.config/gogcli/bin/gog docs create "Meeting Notes"
+
+# Create a doc from a markdown file (supports inline images)
+/sandbox/.config/gogcli/bin/gog docs create "Report" --file /tmp/report.md
+
+# Write content to a doc (replaces all content)
+/sandbox/.config/gogcli/bin/gog docs write <docId> "New content for the document"
+
+# Insert text at a specific position (index)
+/sandbox/.config/gogcli/bin/gog docs insert <docId> --index 1 "Text to insert"
+
+# Find and replace text
+/sandbox/.config/gogcli/bin/gog docs find-replace <docId> "old text" "new text"
+
+# Regex find and replace (sed-style)
+/sandbox/.config/gogcli/bin/gog docs sed <docId> "s/pattern/replacement/g"
+
+# Clear all content from a doc
+/sandbox/.config/gogcli/bin/gog docs clear <docId>
+
+# Copy a doc
+/sandbox/.config/gogcli/bin/gog docs copy <docId> "Copy of Document"
+
+# Export as PDF, DOCX, TXT, or Markdown
+/sandbox/.config/gogcli/bin/gog docs export <docId> --format pdf
+/sandbox/.config/gogcli/bin/gog docs export <docId> --format docx
+/sandbox/.config/gogcli/bin/gog docs export <docId> --format md
+
+# List tabs in a doc
+/sandbox/.config/gogcli/bin/gog docs list-tabs <docId>
 ```
 
 ## Notes
 
 - All output is JSON by default (GOG_JSON=1 is set).
+- **Email body formatting**: Always use `--body-html` instead of `--body` for any email longer than one sentence. Plain `--body` text preserves literal newlines, causing ugly mid-sentence line breaks. Never insert line breaks inside a paragraph. Use these HTML patterns:
+  - **Paragraphs**: `<p>Text here.</p>`
+  - **Bold/italic**: `<strong>bold</strong>`, `<em>italic</em>`
+  - **Lists**: `<ul><li>Item one</li><li>Item two</li></ul>` (or `<ol>` for numbered)
+  - **Tables**: Always include inline border styles: `<table style="border-collapse:collapse;width:100%"><tr><th style="border:1px solid #ddd;padding:8px;text-align:left;background-color:#f2f2f2">Header</th></tr><tr><td style="border:1px solid #ddd;padding:8px">Value</td></tr></table>`
+  - **Headings**: `<h3>Section Title</h3>`
+  - **Links**: `<a href="https://example.com">link text</a>`
+  - Email clients strip `<style>` blocks, so all styling must be inline via the `style` attribute.
 - Gmail send supports --attach for file attachments (PNG, PDF, etc.), repeatable.
 - Calendar create sends invites when --attendees is provided.
 - Contacts are read-only (search and lookup only).
 - Tasks support full CRUD (create, read, update, delete, mark done).
 - Sheets support reading, writing, appending, formatting, and exporting.
-- Drive supports upload, download, share, mkdir, move, rename, copy, delete.
+- Drive supports upload, download, share, mkdir, move, rename, copy, delete, url.
+- Docs supports native read (cat), write, insert, find-replace, regex sed, create, copy, export, clear.
 - Token is managed automatically by the host-side push daemon.
