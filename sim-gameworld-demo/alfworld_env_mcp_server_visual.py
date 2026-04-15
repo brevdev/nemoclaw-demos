@@ -1,8 +1,13 @@
+#!/usr/bin/env python3
 """
 alfworld_env_mcp_server_visual.py
 ----------------------------------
 FastMCP server that exposes the ALFWorld THOR 3D visual environment as MCP tools.
 At every step the agent receives both a first-person RGB frame and text feedback.
+
+The sandbox agent (which has its own LLM with tool-calling capability) decides
+which tool to call and which action to take.  No secondary LLM or action-picker
+runs here — this server is pure environment I/O.
 
 Tools
 -----
@@ -11,7 +16,6 @@ Tools
   get_admissible_commands()                – Return currently valid action strings.
   get_current_state()                      – Text + visual state snapshot.
   get_current_frame_info()                 – Path / shape of the latest saved frame.
-  vlm_choose_action(...)                   – Ask NVIDIA VLM (image + text) to pick action.
   upload_frame_to_sandbox(sandbox, step)   – Push a frame PNG to a sandbox via openshell.
   get_game_log(last_n)                     – Return last N step blocks from game_log_visual.md.
   search_game_log(pattern)                 – grep game_log_visual.md for a pattern.
@@ -19,17 +23,28 @@ Tools
 Run
 ---
     DISPLAY=:1 ALFWORLD_DATA=/ephemeral/cache/alfworld \\
-        python alfworld_env_mcp_server_visual.py   # listens on 0.0.0.0:9001/mcp
+        python alfworld_env_mcp_server_visual.py          # listens on 0.0.0.0:9001/mcp
+    python alfworld_env_mcp_server_visual.py --port 9002
+
+Default URL: http://0.0.0.0:9001/mcp
+
+Environment
+-----------
+  ALFWORLD_DATA               – path to downloaded ALFWorld data
+  MCP_ALFWORLD_HOST           – bind host  (default 0.0.0.0)
+  MCP_ALFWORLD_PORT           – bind port  (default 9001)
+  MCP_ALFWORLD_PATH           – URL path   (default /mcp)
 
 Prerequisites
 -------------
   * Xvfb running on DISPLAY=:1  (sudo apt-get install xvfb && Xvfb :1 -screen 0 1024x768x24 &)
   * ALFWORLD_DATA env var pointing to downloaded data
-  * NVIDIA_API_KEY env var for the NVIDIA VLM
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
-import base64
 import glob
 import json
 import os
@@ -39,13 +54,14 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import requests
 import yaml
 from PIL import Image
 from dotenv import load_dotenv
+from colorama import Fore, init as colorama_init
 from fastmcp import FastMCP
 
 load_dotenv()
+colorama_init(autoreset=True)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _SCRIPT_DIR     = Path(__file__).resolve().parent
@@ -53,69 +69,8 @@ _DEFAULT_CONFIG = _SCRIPT_DIR / "configs" / "base_config.yaml"
 _FRAMES_DIR     = _SCRIPT_DIR / "visual_frames"
 _LOG_FILE       = _SCRIPT_DIR / "game_log_visual.md"
 
-# Destination path inside the sandbox for uploaded frames, change path if needed
+# Destination path inside the sandbox for uploaded frames — change if needed
 _SANDBOX_DEST   = "/sandbox/.openclaw/workspace/skills/alfworld-game-viz/assets/"
-
-HISTORY_WINDOW  = 5   # steps of history injected into VLM prompts
-
-
-# ── NVIDIA VLM helpers ────────────────────────────────────────────────────────
-
-def _img2b64(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-def _query_vlm(query: str, image_path: str | None = None, sys_prompt: str | None = None) -> str:
-    invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
-    api_key = os.environ.get("NVIDIA_API_KEY", "")
-    if not api_key:
-        raise ValueError("NVIDIA_API_KEY not set.")
-    if sys_prompt is None:
-        sys_prompt = "You are a helpful AI assistant that can understand text and images."
-
-    user_content = []
-    if image_path and os.path.exists(image_path):
-        b64  = _img2b64(image_path)
-        ext  = image_path.lower().rsplit(".", 1)[-1]
-        mime = {"png": "image/png", "gif": "image/gif",
-                "webp": "image/webp"}.get(ext, "image/jpeg")
-        user_content.append({"type": "image_url",
-                              "image_url": {"url": f"data:{mime};base64,{b64}"}})
-    user_content.append({"type": "text", "text": query})
-
-    messages = [{"role": "system", "content": sys_prompt},
-                {"role": "user",   "content": user_content}]
-    payload = {
-        "model": "google/gemma-4-31b-it",
-        "messages": messages,
-        "max_tokens": 16384,
-        "temperature": 1.00,
-        "top_p": 0.95,
-        "stream": True,
-        "chat_template_kwargs": {"enable_thinking": True},
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "text/event-stream",
-    }
-
-    resp = requests.post(invoke_url, headers=headers, json=payload, stream=True, timeout=60)
-    if resp.status_code != 200:
-        raise RuntimeError(f"VLM error {resp.status_code}: {resp.text[:200]}")
-
-    collected = []
-    for line in resp.iter_lines():
-        if line:
-            text = line.decode("utf-8")
-            if text.startswith("data: ") and text != "data: [DONE]":
-                try:
-                    chunk = json.loads(text[6:])
-                    delta = chunk["choices"][0]["delta"].get("content", "")
-                    if delta:
-                        collected.append(delta)
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    pass
-    return "".join(collected)
 
 
 # ── Frame helpers ─────────────────────────────────────────────────────────────
@@ -141,6 +96,7 @@ def _init_log(task: str) -> None:
         fh.write("ENV: AlfredThorEnv\n\n---\n\n")
         fh.write("## STEP:0000 | ACTION:(initial) | DONE:False | GC:0.00\n")
 
+
 def _log_step(step: int, action: str, obs: str, done: bool,
               gc_sr: float, frame_path: str) -> None:
     obs_single = obs.replace("\n", " ").strip()
@@ -149,6 +105,7 @@ def _log_step(step: int, action: str, obs: str, done: bool,
         fh.write(f"OBS: {obs_single}\n")
         fh.write(f"FRAME: {frame_path}\n")
 
+
 def _clear_frames() -> int:
     """Delete all step_*.png files from the visual_frames folder. Returns count removed."""
     removed = 0
@@ -156,46 +113,8 @@ def _clear_frames() -> int:
         os.remove(f)
         removed += 1
     if removed:
-        print(f"[visual_mcp] Cleared {removed} frame(s) from {_FRAMES_DIR}/")
+        print(f"[alfworld_mcp] Cleared {removed} frame(s) from {_FRAMES_DIR}/")
     return removed
-
-
-def _load_recent_steps(n: int = HISTORY_WINDOW) -> str:
-    if not _LOG_FILE.exists():
-        return ""
-    text   = _LOG_FILE.read_text()
-    blocks = re.split(r"(?=^## STEP:)", text, flags=re.MULTILINE)
-    recent = [b.strip() for b in blocks if b.startswith("## STEP:")][-n:]
-    return "\n".join(recent)
-
-
-# ── VLM system prompt ─────────────────────────────────────────────────────────
-
-_VLM_SYSTEM_PROMPT = """\
-You are an expert agent playing an embodied household task game (ALFWorld / AI2-THOR).
-
-HOW THE ENVIRONMENT WORKS:
-- The game proceeds step by step. Each step you take ONE action, the world changes, and
-  you receive a new image + text observation reflecting that new state.
-- The image always shows the scene AFTER the last action was applied - study it carefully.
-- The list of admissible actions changes every step to reflect what is now possible.
-
-HOW TO USE THE HISTORY:
-- You receive a summary of the last few steps (action taken -> what the game reported).
-- Use this to avoid repeating actions that had no effect, to track objects you found,
-  and to maintain a plan toward the task goal.
-- If the same action keeps appearing without progress, change strategy.
-
-YOUR DECISION PROCESS AT EACH STEP:
-1. Re-read the TASK goal.
-2. Review the RECENT STEP HISTORY - what was tried, what changed, what still needs doing.
-3. Study the IMAGE to confirm the current scene and spot relevant objects.
-4. Read the TEXT OBSERVATION for details invisible in the image (inventory, temperatures,
-   receptacle contents, cleanliness status).
-5. Pick the single best action from the admissible list that moves you closer to the goal.
-
-Reply with ONLY the exact action text (copied verbatim from the admissible actions list).
-Do not add any explanation, punctuation, or extra words."""
 
 
 # ── Global environment state ──────────────────────────────────────────────────
@@ -228,7 +147,7 @@ def _init_env() -> None:
     raw = get_environment("AlfredThorEnv")(config, train_eval="eval_in_distribution")
     _env = raw.init_env(batch_size=1)
     _clear_frames()
-    print("[visual_mcp] AlfredThorEnv initialised.")
+    print("[alfworld_mcp] AlfredThorEnv initialised.")
 
 
 def _extract_task(obs: str) -> str:
@@ -410,72 +329,6 @@ async def get_current_frame_info() -> str:
 
 
 @mcp.tool()
-async def vlm_choose_action(
-    task: str,
-    observation: str,
-    admissible_commands: list,
-    frame_path: str,
-    step: int = 0,
-) -> str:
-    """
-    Ask the NVIDIA Nemotron Nano VLM to choose the next action using
-    both the visual frame and the text observation, with rolling step history.
-
-    Args:
-        task                (str)       – Task description for this episode.
-        observation         (str)       – Current text observation.
-        admissible_commands (list[str]) – Valid actions at this step.
-        frame_path          (str)       – Path to the current frame PNG.
-        step                (int)       – Current step number.
-
-    Returns JSON:
-        chosen_action   (str)
-        vlm_raw_output  (str)   – raw model reply before matching
-        matched         (bool)  – True if raw output matched an admissible command
-    """
-    if not admissible_commands:
-        return json.dumps({"error": "No admissible commands provided."})
-
-    numbered = "\n".join(f"{i+1}. {cmd}" for i, cmd in enumerate(admissible_commands))
-    history  = _load_recent_steps(HISTORY_WINDOW)
-
-    query = (
-        f"TASK: {task}\n\n"
-        f"--- RECENT STEP HISTORY (last {HISTORY_WINDOW} steps) ---\n"
-        f"{history if history else '(no history yet)'}\n\n"
-        f"--- CURRENT STATE (step {step}) ---\n"
-        f"The image above shows the environment AFTER step {step - 1}.\n"
-        f"Text observation: {observation.strip()}\n\n"
-        f"Admissible actions ({len(admissible_commands)} available):\n{numbered}\n\n"
-        "Which single action should I take? Reply with the exact action text only."
-    )
-
-    raw = _query_vlm(query=query, image_path=frame_path, sys_prompt=_VLM_SYSTEM_PROMPT)
-    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-
-    matched = True
-    chosen  = raw
-    if raw not in admissible_commands:
-        matched = False
-        raw_lower = raw.lower()
-        for cmd in admissible_commands:
-            if cmd.lower() == raw_lower:
-                chosen = cmd; matched = True; break
-        if not matched:
-            for cmd in admissible_commands:
-                if cmd.lower() in raw_lower:
-                    chosen = cmd; matched = True; break
-        if not matched:
-            chosen = admissible_commands[0]
-
-    return json.dumps({
-        "chosen_action":  chosen,
-        "vlm_raw_output": raw,
-        "matched":        matched,
-    })
-
-
-@mcp.tool()
 async def upload_frame_to_sandbox(sandbox_name: str, step: int | None = None) -> str:
     """
     Upload a saved frame PNG to a sandbox via openshell.
@@ -590,13 +443,29 @@ async def search_game_log(pattern: str) -> str:
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    asyncio.run(
-        mcp.run(
-            transport="streamable-http",
-            host="0.0.0.0",
-            port=9001,
-            path="/mcp",
-            log_level="info",
-        )
+    parser = argparse.ArgumentParser(
+        description="ALFWorld Visual Environment MCP Server",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--host", default=os.environ.get("MCP_ALFWORLD_HOST", "0.0.0.0"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_ALFWORLD_PORT", "9001")))
+    parser.add_argument("--path", default=os.environ.get("MCP_ALFWORLD_PATH", "/mcp"))
+    args = parser.parse_args()
+
+    print(
+        Fore.GREEN +
+        f"[mcp-server] AlfWorldVisualEnvMCP  →  "
+        f"http://{args.host}:{args.port}{args.path}"
+    )
+    print(Fore.CYAN  + f"[mcp-server] Config : {_DEFAULT_CONFIG}")
+    print(Fore.CYAN  + f"[mcp-server] Frames : {_FRAMES_DIR}")
+    print(Fore.YELLOW + "[mcp-server] Reachable from sandbox via host's LAN/bridge IP on that port.")
+    mcp.run(
+        transport="streamable-http",
+        host=args.host,
+        port=args.port,
+        path=args.path,
+        show_banner=False,
     )

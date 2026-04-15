@@ -1,244 +1,161 @@
+#!/usr/bin/env python3
 """
-sandbox_client_vis.py
----------------------
-Sandbox-side MCP client for alfworld_env_mcp_server_visual.py running on the host.
+Direct MCP tool caller for the ALFWorld Visual Environment server.
 
-Mirrors host_client_vis.py but targets the host visual MCP server via the
-OpenShell internal hostname, and writes history into the sandbox workspace.
+The OpenClaw agent (which already has an LLM with tool-calling capability)
+decides which tool to invoke and with what arguments.  This script executes
+that one tool call against the remote MCP server and prints the result to
+stdout.  No secondary LLM or game-loop logic runs here.
 
-At every step the client:
-  1. Calls vlm_choose_action  – NVIDIA Nemotron Nano VLM picks the action using
-                                the current frame + text + rolling step history.
-  2. Calls step_env           – executes the action in the THOR 3D environment.
-  3. Optionally calls upload_frame_to_sandbox – tells the HOST server to push the
-                                new frame PNG into this sandbox via openshell.
-                                Set SANDBOX_NAME below to enable.
+Usage:
+  <skill_dir>/venv/bin/python3 sandbox_client_vis.py <tool> [options]
 
-Frame upload destination
-------------------------
-The host server uploads frames to the OpenClaw agent workspace inside the sandbox:
-    /sandbox/.openclaw/workspace/skills/alfworld-game-viz/assets/step_NNNN.png
-This path is owned and used by the OpenClaw agent; it is set on the server side.
+Tools:
+  reset_env
+  step_env                 --action ACTION
+  get_admissible_commands
+  get_current_state
+  get_current_frame_info
+  upload_frame_to_sandbox  --sandbox-name NAME [--step N]
+  get_game_log             [--last-n N]
+  search_game_log          --pattern PATTERN
 
-Usage
------
-    # Terminal 1 (on the HOST) – start the visual MCP server:
-    DISPLAY=:1 ALFWORLD_DATA=/ephemeral/cache/alfworld \\
-        python alfworld_env_mcp_server_visual.py
+Server URL (resolved in order):
+  1. --server-url flag
+  2. MCP_SERVER_URL env var
+  3. Default: http://host.openshell.internal:9001/mcp
 
-    # Copy this file into the sandbox, then inside the sandbox run:
-    python sandbox_client_vis.py
-
-To continue an in-progress episode without resetting:
-    history = asyncio.run(play_game(reset=False))
+Always run with the skill venv's Python so the sandbox policy allows the
+outbound connection to port 9001.  Do NOT use bare python3.
 """
+from __future__ import annotations
 
 import asyncio
-import json
-from datetime import datetime
-from pathlib import Path
+import os
+import sys
+import argparse
 
-from colorama import Fore, init
-from fastmcp import Client
+try:
+    from fastmcp import Client
+except ImportError as _e:
+    _skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _venv_python = os.path.join(_skill_dir, "venv", "bin", "python3")
+    print(
+        f"\nMissing dependency: {_e}\n"
+        "Run this script with the skill venv's Python, not bare python3:\n\n"
+        f"  {_venv_python} {__file__} <tool> [args]\n\n"
+        "If the venv doesn't exist yet, create it with:\n\n"
+        f"  python3 -m venv {_skill_dir}/venv\n"
+        f"  {_skill_dir}/venv/bin/pip install -q fastmcp\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
-init(autoreset=True)
-
-# ── Configuration ─────────────────────────────────────────────────────────────
-VISUAL_MCP_URL = "http://host.openshell.internal:9001/mcp"
-
-MAX_STEPS    = 1
-SANDBOX_NAME = "rousing-pochard"  # sandbox name for frame uploads via openshell
-                                  # Frames land at the OpenClaw agent workspace (set by the server):
-                                  #   /sandbox/.openclaw/workspace/skills/alfworld-game-viz/assets/
-
-open_claw_skill_path = Path("/sandbox/.openclaw/workspace/skills/")
-HISTORY_FILE = open_claw_skill_path / "game_history_visual_sandbox.md"
-
-
-# ── Markdown helpers ───────────────────────────────────────────────────────────
-
-def _md_new_game(f, task: str, obs: str, banner: str) -> None:
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    f.write(f"\n---\n\n## {banner} — {ts}\n\n")
-    f.write(f"**Task:** {task}\n\n")
-    f.write(f"**Initial Observation:**\n> {obs}\n\n")
-
-def _md_resume(f, step: int) -> None:
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    f.write(f"\n### Resumed at step {step} — {ts}\n\n")
-
-def _md_step(f, step: int, action: str, obs: str,
-             gc_sr: float, done: bool, frame_path: str,
-             uploaded_to: str = "") -> None:
-    f.write(f"### Step {step:02d}\n")
-    f.write(f"**Action:** `{action}`\n\n")
-    f.write(f"**Observation:** {obs}\n\n")
-    f.write(f"**Goal conditions met:** {gc_sr:.0%} | **Done:** {done}\n\n")
-    f.write(f"**Frame (host):** `{frame_path}`")
-    if uploaded_to:
-        f.write(f"\n\n**Frame (sandbox):** `{uploaded_to}`")
-    f.write("\n\n")
-
-def _md_summary(f, won: bool, gc_sr: float, total_steps: int) -> None:
-    f.write("### Result\n")
-    if won:
-        f.write(f"**SUCCESS** — task completed in {total_steps} steps. "
-                f"Goal conditions: {gc_sr:.0%}\n\n")
-    else:
-        f.write(f"**Episode ended** at step {total_steps}. "
-                f"Goal conditions: {gc_sr:.0%}\n\n")
+_DEFAULT_URL = "http://host.openshell.internal:9001/mcp"
 
 
-# ── Main game loop ─────────────────────────────────────────────────────────────
+async def call_tool(server_url: str, tool: str, args: dict) -> str:
+    async with Client(server_url) as client:
+        result = await client.call_tool(tool, args)
+    return result.content[0].text
 
-async def play_game(reset: bool = True) -> None:
-    """
-    Play (or continue) an ALFWorld THOR game via the visual MCP server on the host.
 
-    Args:
-        reset (bool): True  → call reset_env and start a fresh episode.
-                      False → resume from the server's current state;
-                              auto-resets only if no game is active.
-    """
-    print(Fore.CYAN + f"\nConnecting to visual MCP server at {VISUAL_MCP_URL} ...\n")
+def main() -> None:
+    root = argparse.ArgumentParser(
+        description="Call a specific ALFWorld Visual MCP tool directly.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    root.add_argument(
+        "--server-url",
+        default=os.environ.get("MCP_SERVER_URL", _DEFAULT_URL),
+        help="Full URL of the MCP server.",
+    )
 
-    async with Client(VISUAL_MCP_URL) as client:
+    sub = root.add_subparsers(dest="tool", metavar="<tool>", required=True)
 
-        # ── Reset or resume ───────────────────────────────────────────────────
-        if reset:
-            raw    = await client.call_tool("reset_env", {})
-            state  = json.loads(raw.content[0].text)
-            banner = "GAME START (fresh reset)"
-        else:
-            raw   = await client.call_tool("get_current_state", {})
-            state = json.loads(raw.content[0].text)
-            if not state.get("observation"):
-                raw    = await client.call_tool("reset_env", {})
-                state  = json.loads(raw.content[0].text)
-                banner = "GAME START (auto-reset: no active game)"
-            else:
-                banner = f"RESUMING from step {state['step']}"
+    # reset_env
+    sub.add_parser("reset_env",
+                   help="Reset the ALFWorld THOR environment and start a new episode.")
 
-        task         = state["task"]
-        obs          = state["observation"]
-        admissible   = state["admissible_commands"]
-        gc_sr        = state.get("goal_condition_success", 0.0)
-        done         = state.get("done", False)
-        frame_path   = state.get("frame_path", "")
-        server_step  = state.get("step", 0)
-        current_step = server_step
+    # step_env
+    p_step = sub.add_parser("step_env",
+                             help="Execute an action in the THOR environment.")
+    p_step.add_argument("--action", required=True,
+                        help="One of the currently admissible action strings.")
 
-        print(Fore.GREEN + "=" * 70)
-        print(Fore.GREEN + banner)
-        print(Fore.GREEN + "=" * 70)
-        print(Fore.WHITE + obs)
-        print(Fore.YELLOW + f"\nTask       : {task}")
-        print(Fore.CYAN  + f"Frame      : {frame_path}")
-        print(Fore.CYAN  + f"Actions ({len(admissible)}): {admissible[:4]}"
-              f"{'  ...' if len(admissible) > 4 else ''}")
-        print()
+    # get_admissible_commands
+    sub.add_parser("get_admissible_commands",
+                   help="Return the list of currently valid action strings.")
 
-        if done:
-            print(Fore.YELLOW + "Episode already finished. Pass reset=True to start fresh.")
-            return
+    # get_current_state
+    sub.add_parser("get_current_state",
+                   help="Return a full snapshot of the current game state (text + frame).")
 
-        with open(HISTORY_FILE, "w" if "GAME START" in banner else "a", encoding="utf-8") as md:
-            if "GAME START" in banner:
-                _md_new_game(md, task, obs, banner)
-            else:
-                _md_resume(md, server_step)
+    # get_current_frame_info
+    sub.add_parser("get_current_frame_info",
+                   help="Return metadata about the most recently saved visual frame.")
 
-            for i in range(1, MAX_STEPS + 1):
-                display_step = server_step + i
+    # upload_frame_to_sandbox
+    p_upload = sub.add_parser("upload_frame_to_sandbox",
+                               help="Upload a saved frame PNG to a sandbox via openshell.")
+    p_upload.add_argument("--sandbox-name", required=True,
+                          help="Name of the target sandbox (e.g. 'my-sandbox').")
+    p_upload.add_argument("--step", type=int, default=None,
+                          help="Step number to upload (defaults to latest step).")
 
-                # ── VLM picks action (image + text + server-side history) ────
-                raw = await client.call_tool(
-                    "vlm_choose_action",
-                    {
-                        "task":                task,
-                        "observation":         obs,
-                        "admissible_commands": admissible,
-                        "frame_path":          frame_path,
-                        "step":                current_step,
-                    },
-                )
-                vlm_result  = json.loads(raw.content[0].text)
+    # get_game_log
+    p_log = sub.add_parser("get_game_log",
+                            help="Return the last N step blocks from game_log_visual.md.")
+    p_log.add_argument("--last-n", type=int, default=10,
+                       help="Number of recent steps to return.")
 
-                if "error" in vlm_result:
-                    print(Fore.RED + f"[VLM ERROR] {vlm_result['error']}")
-                    break
+    # search_game_log
+    p_search = sub.add_parser("search_game_log",
+                               help="Search game_log_visual.md for lines matching a pattern.")
+    p_search.add_argument("--pattern", required=True,
+                          help="Plain text or regex pattern to search for.")
 
-                action  = vlm_result["chosen_action"]
-                matched = vlm_result.get("matched", True)
-                raw_out = vlm_result.get("vlm_raw_output", "")
+    parsed = root.parse_args()
+    server_url = parsed.server_url
+    tool = parsed.tool
 
-                print(Fore.MAGENTA + f"[Step {display_step:02d}] VLM chose: » {action} «"
-                      + (Fore.YELLOW + "  (fallback)" if not matched else ""))
-                if not matched:
-                    print(Fore.YELLOW + f"           raw output: {raw_out[:80]}")
+    # Build args dict for the tool call
+    tool_args: dict = {}
 
-                # ── Execute action ────────────────────────────────────────────
-                raw    = await client.call_tool("step_env", {"action": action})
-                result = json.loads(raw.content[0].text)
+    if tool == "reset_env":
+        tool_args = {}
 
-                if "error" in result:
-                    print(Fore.RED + f"[STEP ERROR] {result['error']}")
-                    md.write(f"> ⚠️ Error: {result['error']}\n\n")
-                    break
+    elif tool == "step_env":
+        tool_args = {"action": parsed.action}
 
-                obs          = result["observation"]
-                gc_sr        = result.get("goal_condition_success", 0.0)
-                done         = result["done"]
-                won          = result.get("won", False)
-                current_step = result.get("step", current_step)
-                admissible   = result.get("admissible_commands", [])
-                frame_path   = result.get("frame_path", frame_path)
+    elif tool == "get_admissible_commands":
+        tool_args = {}
 
-                print(Fore.WHITE + f"         Obs   : {obs[:200]}{'...' if len(obs) > 200 else ''}")
-                print(Fore.BLUE  + f"         GC    : {gc_sr:.0%}  |  Done: {done}  |  Won: {won}")
-                print(Fore.CYAN  + f"         Frame : {frame_path}")
+    elif tool == "get_current_state":
+        tool_args = {}
 
-                # ── Optional frame upload into this sandbox ───────────────────
-                uploaded_to = ""
-                if SANDBOX_NAME:
-                    up_raw    = await client.call_tool(
-                        "upload_frame_to_sandbox",
-                        {"sandbox_name": SANDBOX_NAME, "step": current_step},
-                    )
-                    up_result = json.loads(up_raw.content[0].text)
-                    if up_result.get("returncode") == 0:
-                        uploaded_to = up_result.get("dest_path", "")
-                        print(Fore.GREEN + f"         Uploaded → {uploaded_to}")
-                    else:
-                        err = up_result.get("stderr") or up_result.get("error", "unknown")
-                        print(Fore.RED + f"         Upload failed: {err}")
+    elif tool == "get_current_frame_info":
+        tool_args = {}
 
-                print()
-                _md_step(md, display_step, action, obs, gc_sr, done, frame_path, uploaded_to)
+    elif tool == "upload_frame_to_sandbox":
+        tool_args = {"sandbox_name": parsed.sandbox_name}
+        if parsed.step is not None:
+            tool_args["step"] = parsed.step
 
-                if done:
-                    break
+    elif tool == "get_game_log":
+        tool_args = {"last_n": parsed.last_n}
 
-            # ── Summary ───────────────────────────────────────────────────────
-            total_steps = server_step + i
-            won_final   = won if done else False
-            _md_summary(md, won_final, gc_sr, total_steps)
+    elif tool == "search_game_log":
+        tool_args = {"pattern": parsed.pattern}
 
-        print(Fore.GREEN + "=" * 70)
-        if won_final:
-            print(Fore.GREEN + f"SUCCESS! Task completed in {total_steps} steps.")
-        elif done:
-            print(Fore.RED   + f"Episode ended at step {total_steps}. GC: {gc_sr:.0%}")
-        else:
-            print(Fore.YELLOW + f"Paused after {MAX_STEPS} steps (global step {total_steps}).")
-        print(Fore.GREEN + "=" * 70)
-        print(Fore.CYAN + f"History written to : {HISTORY_FILE}")
-        if SANDBOX_NAME:
-            print(Fore.CYAN + f"Frames uploaded to : "
-                  "/sandbox/.openclaw/workspace/skills/alfworld-game-viz/assets/")
+    try:
+        result = asyncio.run(call_tool(server_url, tool, tool_args))
+        print(result)
+    except Exception as exc:
+        print(f"Error calling '{tool}': {exc}", file=sys.stderr)
+        print(f"Is the server reachable at {server_url}?", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    asyncio.run(play_game(reset=True))
-    # To continue without resetting:
-    # asyncio.run(play_game(reset=False))
+    main()
