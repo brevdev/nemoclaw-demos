@@ -25,7 +25,7 @@ usage_exit() {
   echo ""
   echo "  Usage: ./install.sh [sandbox-name]"
   echo ""
-  echo "  Installs Google Workspace integration (Gmail, Calendar, Drive) via gog CLI"
+  echo "  Installs Google Workspace integration (Gmail, Calendar, Drive, Docs, Sheets, Contacts, Tasks) via gog CLI"
   echo "  with a host-side push daemon. No sandbox recreation needed."
   echo ""
   echo "  The refresh token stays on the host. Only short-lived access tokens"
@@ -52,7 +52,7 @@ done
 echo ""
 echo -e "${CYAN}  ╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}  ║  Google Workspace Integration for NemoClaw             ║${NC}"
-echo -e "${CYAN}  ║  Gmail Calendar Drive Sheets Contacts Tasks            ║${NC}"
+echo -e "${CYAN}  ║  Gmail Calendar Drive Docs Sheets Contacts Tasks       ║${NC}"
 echo -e "${CYAN}  ╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -150,7 +150,7 @@ json.dump(d, open('$CREDS_PATH', 'w'), indent=2)
   else
     echo ""
     echo -e "  ${YELLOW}Before continuing, make sure you have:${NC}"
-    echo "    1. A Google Cloud project with Gmail, Calendar, Drive, Sheets, People, and Tasks APIs enabled"
+    echo "    1. A Google Cloud project with Gmail, Calendar, Drive, Docs, Sheets, People, and Tasks APIs enabled"
     echo "    2. An OAuth2 Desktop App credential (client ID + client secret)"
     echo "    3. Your Gmail address added as a test user in the OAuth consent screen"
     echo ""
@@ -236,7 +236,12 @@ if [ -z "$GOG_BIN" ]; then
   fi
 
   info "Building gog CLI (this takes 1-2 minutes)..."
-  make -C "$GOGCLI_DIR" >/dev/null 2>&1 || fail "gog CLI build failed. Check Go installation."
+  if ! make -C "$GOGCLI_DIR" >/dev/null 2>&1; then
+    if ! command -v make >/dev/null 2>&1; then
+      fail "gog CLI build failed: 'make' is not installed. Fix with: sudo apt install -y make build-essential"
+    fi
+    fail "gog CLI build failed. Run 'make -C $GOGCLI_DIR' manually to see the error."
+  fi
   GOG_BIN="$GOGCLI_DIR/bin/gog"
   [ -x "$GOG_BIN" ] || fail "gog binary not found after build."
   ok "gog CLI built: $GOG_BIN"
@@ -400,7 +405,7 @@ policy_file = sys.argv[1]
 with open(policy_file) as f:
     lines = f.readlines()
 
-SKIP_BLOCKS = {'google_apis', 'google_token_server', 'google_gmail', 'google_calendar', 'google_drive', 'google_sheets', 'google_contacts', 'google_tasks'}
+SKIP_BLOCKS = {'google_apis', 'google_token_server', 'google_gmail', 'google_calendar', 'google_drive', 'google_docs', 'google_sheets', 'google_contacts', 'google_tasks'}
 NEW_ENTRY = '  - /sandbox/.config/gogcli/bin\n'
 
 out = []
@@ -537,6 +542,26 @@ google = """\
           path: /**
     binaries:
     - path: /sandbox/.config/gogcli/bin/gog-bin
+  google_docs:
+    name: google_docs
+    endpoints:
+    - host: docs.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
   google_sheets:
     name: google_sheets
     endpoints:
@@ -607,7 +632,7 @@ PYEOF
 
 openshell policy set --policy "$POLICY_FILE" --wait "$SANDBOX_NAME" 2>&1 || warn "policy set returned non-zero"
 rm -f "$POLICY_FILE"
-ok "Policy applied (gmail + calendar + drive + sheets + contacts + tasks)"
+ok "Policy applied (gmail + calendar + drive + docs + sheets + contacts + tasks)"
 
 # ─────────────────────────────────────────────────────────────────────
 # Step 9: Clear agent sessions
@@ -645,17 +670,18 @@ echo ""
 echo "  Push daemon: pid $(cat "$PID_FILE" 2>/dev/null || echo '?')"
 echo "  Log file:    $LOG_FILE"
 echo ""
-echo "  Services: Gmail, Calendar, Drive, Sheets, Contacts (read), Tasks"
+echo "  Services: Gmail, Calendar, Drive, Docs, Sheets, Contacts (read), Tasks"
 echo ""
 echo "  Next steps:"
 echo "    1. Connect: nemoclaw $SANDBOX_NAME connect"
 echo "    2. Try: \"Check my email\""
 echo "    3. Try: \"What's on my calendar today?\""
 echo "    4. Try: \"Send an email to someone@example.com about the hackathon\""
-    echo "    5. Try: \"List my recent Google Drive files\""
-    echo "    6. Try: \"Read cell A1:D10 from my budget spreadsheet\""
-    echo "    7. Try: \"Create a task to follow up with the client\""
-    echo "    8. Try: \"Look up Sarah in my contacts\""
+echo "    5. Try: \"List my recent Google Drive files\""
+echo "    6. Try: \"Read my meeting notes doc\""
+echo "    7. Try: \"Read cell A1:D10 from my budget spreadsheet\""
+echo "    8. Try: \"Create a task to follow up with the client\""
+echo "    9. Try: \"Look up Sarah in my contacts\""
 echo ""
 echo "  If the agent doesn't recognize gog, disconnect and reconnect."
 echo "  For Telegram: send any new message to start a fresh session."

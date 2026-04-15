@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# NASA APOD API policy template.
+#
+# Allows the sandbox to reach api.nasa.gov for Astronomy Picture of the Day
+# queries. Uses the free DEMO_KEY — no secrets to protect, no proxy needed.
+#
+# The install.sh script merges this block into the existing sandbox policy
+# via `openshell policy set`.
+#
+# Template (for reference only):
+#
+# network_policies:
+#   nasa_apod:
+#     name: nasa_apod
+#     endpoints:
+#       - host: api.nasa.gov
+#         port: 443
+#         protocol: rest
+#         enforcement: enforce
+#         tls: passthrough
+#         rules:
+#           - allow: { method: GET, path: /planetary/apod }
+#     binaries:
+#       - { path: /usr/bin/curl }
+#       - { path: /usr/local/bin/node }

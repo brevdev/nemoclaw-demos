@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Re-deploy Google Workspace integration (restart push daemon, re-upload gog,
-# re-apply policy). Use after a reboot or sandbox reset. Skips OAuth and gog
-# build -- run install.sh for first-time setup.
+# Re-deploy Google Workspace integration (restart push daemon, re-upload gog
+# binary, config, SKILL.md, and network policy). Use after a reboot or sandbox
+# reset. Skips OAuth and gog build -- run install.sh for first-time setup.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$HOME/.nemoclaw/gog-push-daemon.pid"
@@ -156,6 +156,245 @@ ok "gog SKILL.md deployed"
 openshell sandbox exec -n "$SANDBOX" -- bash -c \
   'grep -q "gogcli/bin" /sandbox/.bashrc 2>/dev/null || echo "export PATH=\"/sandbox/.config/gogcli/bin:\$PATH\"" >> /sandbox/.bashrc' 2>/dev/null
 ok "PATH verified"
+
+# ── Re-apply network policy ──────────────────────────────────────────
+
+info "Applying network policy..."
+
+CURRENT_POLICY=$(openshell policy get --full "$SANDBOX" 2>/dev/null | awk '/^---/{found=1; next} found{print}')
+
+POLICY_FILE=$(mktemp /tmp/gog-policy-XXXXXX.yaml)
+echo "${CURRENT_POLICY:-version: 1}" > "$POLICY_FILE"
+
+python3 - "$POLICY_FILE" << 'PYEOF'
+import sys
+
+policy_file = sys.argv[1]
+with open(policy_file) as f:
+    lines = f.readlines()
+
+SKIP_BLOCKS = {'google_apis', 'google_token_server', 'google_gmail', 'google_calendar', 'google_drive', 'google_docs', 'google_sheets', 'google_contacts', 'google_tasks'}
+NEW_ENTRY = '  - /sandbox/.config/gogcli/bin\n'
+
+out = []
+skip_until_next_block = False
+has_gogcli_readonly = False
+inserted_readonly = False
+
+for line in lines:
+    stripped = line.rstrip('\n')
+
+    if '/sandbox/.config/gogcli/bin' in stripped:
+        has_gogcli_readonly = True
+
+    if skip_until_next_block:
+        if stripped == '' or stripped.startswith('    '):
+            continue
+        else:
+            skip_until_next_block = False
+
+    block_match = False
+    for b in SKIP_BLOCKS:
+        if stripped == f'  {b}:':
+            skip_until_next_block = True
+            block_match = True
+            break
+    if block_match:
+        continue
+
+    if not inserted_readonly and stripped == '  read_write:':
+        if not has_gogcli_readonly:
+            out.append(NEW_ENTRY)
+        inserted_readonly = True
+
+    out.append(line)
+
+policy_text = ''.join(out)
+if 'network_policies:' not in policy_text:
+    out.append('network_policies:\n')
+
+google = """\
+  google_gmail:
+    name: google_gmail
+    endpoints:
+    - host: gmail.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+      - allow:
+          method: DELETE
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
+  google_calendar:
+    name: google_calendar
+    endpoints:
+    - host: www.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+      - allow:
+          method: DELETE
+          path: /**
+    - host: calendar.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+      - allow:
+          method: DELETE
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
+  google_drive:
+    name: google_drive
+    endpoints:
+    - host: drive.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PUT
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+      - allow:
+          method: DELETE
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
+  google_docs:
+    name: google_docs
+    endpoints:
+    - host: docs.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
+  google_sheets:
+    name: google_sheets
+    endpoints:
+    - host: sheets.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PUT
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
+  google_contacts:
+    name: google_contacts
+    endpoints:
+    - host: people.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
+  google_tasks:
+    name: google_tasks
+    endpoints:
+    - host: tasks.googleapis.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      tls: terminate
+      rules:
+      - allow:
+          method: GET
+          path: /**
+      - allow:
+          method: POST
+          path: /**
+      - allow:
+          method: PATCH
+          path: /**
+      - allow:
+          method: DELETE
+          path: /**
+    binaries:
+    - path: /sandbox/.config/gogcli/bin/gog-bin
+"""
+
+out.append(google)
+
+with open(policy_file, "w") as f:
+    f.writelines(out)
+PYEOF
+
+openshell policy set --policy "$POLICY_FILE" --wait "$SANDBOX" 2>&1 || warn "policy set returned non-zero"
+rm -f "$POLICY_FILE"
+ok "Policy applied (gmail + calendar + drive + docs + sheets + contacts + tasks)"
 
 # ── Clear sessions ───────────────────────────────────────────────────
 
