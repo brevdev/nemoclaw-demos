@@ -1,0 +1,85 @@
+# Portfolio and holdings data (sensitive)
+holdings.json
+*.holdings.json
+benchmark_results.json
+data/fetch_output/
+portfolio_reports/
+portfolio_data/
+portfolios/
+*.csv
+!examples/**/*.csv
+!tests/**/*.csv
+
+# Environment and local config
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+# dist/ is NOT ignored — the compiled OpenClaw plugin wrapper (dist/index.js)
+# is committed so the plugin is usable without a build step after clone/install.
+downloads/
+node_modules/
+eggs/
+.eggs/
+lib64/
+# lib/ is the skill's source package — NOT a venv directory, do not ignore
+!lib/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temp files
+*.tmp
+*.bak
+.~*
+portfolios/.sector_cache.json
+
+# Distribution artifacts
+InvestorClaw-distribution.zip
+*.distribution.zip
+
+# Development utilities (archived, not for distribution)
+# internal/ contains tier3_enrichment.py (CERBERUS consultation) — must be distributed
+# internal/
+
+# Benchmark raw outputs (large text files)
+scripts/wf_outputs/

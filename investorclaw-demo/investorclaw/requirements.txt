@@ -1,0 +1,38 @@
+# InvestorClaw — runtime dependencies (install with: pip install -r requirements.txt)
+
+# ── Data processing ───────────────────────────────────────────────────────────
+polars>=0.20.0
+pandas>=2.0.0          # yfinance download() returns pandas; polars bridges via pyarrow
+pyarrow>=12.0.0        # polars ↔ pandas bridge
+
+# ── Market & financial data ───────────────────────────────────────────────────
+yfinance>=0.2.35
+requests>=2.31.0       # FRED API, provider fallbacks
+
+# ── News ──────────────────────────────────────────────────────────────────────
+newsapi-python>=0.2.6
+
+# ── PDF extraction (holdings import) ─────────────────────────────────────────
+pdfplumber>=0.9.0
+pypdf2>=3.0.0
+pdfminer-six>=20221105
+tabula-py>=2.3.0
+camelot-py>=0.11.0     # requires system 'ghostscript': brew install ghostscript (macOS) / apt install ghostscript (Linux)
+
+# ── Excel / spreadsheet ──────────────────────────────────────────────────────
+openpyxl>=3.1.0        # .xlsx
+xlrd>=2.0.1            # legacy .xls
+
+# ── Math / statistics ─────────────────────────────────────────────────────────
+numpy>=1.24.0
+scipy>=1.10.0
+
+# ── Config & utilities ────────────────────────────────────────────────────────
+pyyaml>=6.0
+python-dateutil>=2.8.0
+pytz>=2023.3
+orjson>=3.9.0
+python-dotenv>=1.0.0
+
+# ── EOD report (optional PDF generation) ────────────────────────────────────
+# weasyprint>=62.0          # Uncomment to enable PDF attachment in EOD report

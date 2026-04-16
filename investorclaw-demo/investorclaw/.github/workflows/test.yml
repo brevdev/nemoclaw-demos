@@ -1,0 +1,81 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install runtime dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Install dev dependencies
+      run: pip install -r requirements-dev.txt
+
+    - name: Run full test suite
+      run: pytest tests/ -v --tb=short
+
+    - name: Run submission smoke test
+      run: python3 tests_smoke.py
+
+    - name: Verify entry point runs
+      run: python3 investorclaw.py help
+
+  plugin-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Node dependencies
+      run: npm ci
+
+    - name: TypeScript type-check
+      run: node_modules/.bin/tsc --noEmit
+
+    - name: Verify dist/ is up-to-date
+      run: |
+        node_modules/.bin/tsc
+        git diff --exit-code dist/ || (echo "dist/ is stale — run 'npm run build' and commit" && exit 1)
+
+    - name: Manifest consistency check
+      run: |
+        python3 - <<'EOF'
+        import json, sys
+        pkg  = json.load(open("package.json"))
+        plug = json.load(open("openclaw.plugin.json"))
+        pkg_ext  = (pkg.get("openclaw",{}).get("extensions") or [""])[0]
+        plug_ext = (plug.get("openclaw",{}).get("extensions") or [""])[0]
+        pkg_ver  = pkg.get("version")
+        plug_ver = plug.get("version")
+        errors = []
+        if pkg_ext != plug_ext:
+            errors.append(f"extension mismatch: package.json={pkg_ext!r} openclaw.plugin.json={plug_ext!r}")
+        if pkg_ver != plug_ver:
+            errors.append(f"version mismatch: package.json={pkg_ver!r} openclaw.plugin.json={plug_ver!r}")
+        if errors:
+            for e in errors: print("ERROR:", e)
+            sys.exit(1)
+        print("OK: manifests consistent")
+        EOF

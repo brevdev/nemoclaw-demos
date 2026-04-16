@@ -13,6 +13,7 @@ A repository of guides with examples you can take after a successful [hello-worl
 | [**google-workspace-demo**](google-workspace-demo/google-workspace-guide.md) | Full Google Workspace integration (Gmail, Calendar, Drive, Sheets, Contacts, Tasks) with Tier 1 push daemon security. |
 | [**planet-integration-demo**](planet-integration-demo/planet-integration-guide.md) | Planet satellite imagery catalog, tasking cost estimation, and satellite pass availability with Tier 1 proxy security. |
 | [**nasa-apod-demo**](nasa-apod-demo/nasa-apod-guide.md) | NASA Astronomy Picture of the Day |
+| [**investorclaw-demo**](investorclaw-demo/investorclaw-guide.md) | Production-grade portfolio analysis and market intelligence skill — holdings, performance, bond analytics, analyst consensus, EOD reporting, and financial guardrails. FINOS CDM 5.x compliant. Runs on a Raspberry Pi. |
 
 ## Official Resources
 

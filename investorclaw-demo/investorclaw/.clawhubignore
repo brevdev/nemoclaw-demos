@@ -1,0 +1,52 @@
+# ClawHub publish bundle exclusions
+# These files must never be included in a clawhub publish bundle.
+# .gitignore covers git-tracked exclusions; this file adds explicit
+# safety for any publish tooling that does not read .gitignore.
+
+# API keys and secrets — NEVER bundle
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Personal portfolio data — sensitive financial information
+portfolios/*.csv
+portfolios/*.xls
+portfolios/*.xlsx
+portfolios/*.pdf
+portfolios/master_portfolio.csv
+portfolios/setup_results.json
+
+# Generated runtime artifacts — not part of the skill distribution
+portfolio_reports/
+portfolio_data/
+data/fetch_output/
+*.holdings.json
+holdings.json
+benchmark_results.json
+
+# Development artifacts
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.py[cod]
+*.so
+tests/
+node_modules/
+# dist/ is intentionally NOT excluded — dist/index.js is the compiled OpenClaw
+# plugin entry point and must be present in the ClawHub bundle.
+build/
+.mypy_cache/
+.ruff_cache/
+tsconfig.json
+*.ts.map
+index.ts
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

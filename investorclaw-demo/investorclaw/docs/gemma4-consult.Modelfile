@@ -1,0 +1,37 @@
+# gemma4-consult Modelfile
+#
+# Creates a tuned derivative of gemma4:e4b optimised for low-latency
+# consultative Q&A in InvestorClaw's Tier-3 enrichment pipeline.
+#
+# Benchmarked on CERBERUS: RTX 4500 Ada 24 GB, driver 595.58.03
+#   ~65 tok/s | simple Q&A 1.5-2.5s | complex 8-14s | 4K ctx
+#
+# Requirements:
+#   - Ollama >= 0.20.x with Flash Attention
+#   - >= 12 GB VRAM
+#   - CUDA compute capability >= 8.0 (RTX 30xx / A-series / Ada or newer)
+#
+# Setup:
+#   ollama pull gemma4:e4b          # pull base model (~9.6 GB)
+#   ollama create gemma4-consult -f docs/gemma4-consult.Modelfile
+#
+# Or use the automated setup script:
+#   python3 scripts/ollama_model_config.py --model gemma4-consult \
+#       --endpoint http://your-ollama-host:11434
+#
+# Verify:
+#   ollama list | grep gemma4-consult
+#   python3 scripts/ollama_model_config.py --check \
+#       --endpoint http://your-ollama-host:11434
+
+FROM gemma4:e4b
+
+PARAMETER num_ctx 4096
+PARAMETER num_predict 1200
+PARAMETER temperature 0.65
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+PARAMETER stop "<end_of_turn>"
+PARAMETER stop "<eos>"
+
+SYSTEM "You are a financial data analyst providing educational information only. Your analysis is not investment advice. Answer in 3-5 sentences for simple questions, or up to 400 words for complex topics. Lead with the direct answer. Include specific figures, percentages, and named metrics where available. No preamble, no restating the question."

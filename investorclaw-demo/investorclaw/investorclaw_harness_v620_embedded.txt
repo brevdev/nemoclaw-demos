@@ -1,0 +1,384 @@
+CREDENTIALS SETUP (one-time, on orchestrator Mac — set before running any harness step):
+  export ZEROPI_HOST=<zeropi-ip-or-hostname>       # zeropi: zeroclaw agent host
+  export CLAWPI_HOST=<clawpi-ip-or-hostname>       # clawpi: openclaw agent host
+  export ZEROPI_USER=<zeropi-ssh-username>         # SSH user on zeropi
+  export CLAWPI_USER=<clawpi-ssh-username>         # SSH user on clawpi
+  export CONSULTATION_HOST=<ollama-host-ip>        # GPU inference host running Ollama (gemma4-consult)
+  export ORCHESTRATOR_HOME=<your-mac-home-dir>     # e.g. /Users/yourusername
+  export IC_GITHUB_REPO=<github-clone-url>         # e.g. https://github.com/yourorg/InvestorClaw
+  echo 'YourPiPasswordHere' > ~/.investorclaw/harness.creds && chmod 600 ~/.investorclaw/harness.creds
+  export PI_CREDS=~/.investorclaw/harness.creds    # file-based — never export password as env var
+  Add ZEROPI_HOST/CLAWPI_HOST/ZEROPI_USER/CLAWPI_USER/CONSULTATION_HOST/ORCHESTRATOR_HOME/IC_GITHUB_REPO/PI_CREDS to ~/.zshrc or ~/.zprofile. Do NOT commit credentials or .env files.
+  VERIFY: echo "ZEROPI=${ZEROPI_HOST} CLAWPI=${CLAWPI_HOST} OLLAMA=${CONSULTATION_HOST} REPO=${IC_GITHUB_REPO}"
+
+INVESTORCLAW TEST HARNESS V6.3.2-PI | Min commit: 33e5442 | Zeropi session prefix: ic-pi-z | Clawpi session prefix: ic-pi-v620
+SCOPE: LOW-MEMORY EMBEDDED ARM Pi DEVICES — zeropi (zeroclaw agent) + clawpi (openclaw agent) | Single deployment mode (SI) | Narrower matrix: 3 provider profiles × 2 consultation modes | No premium model Phase 5
+NOT for STUDIO/Mac execution — see V6.1.2 (ic-harness-v612) for Mac/premium model phases
+═══════════════════════════════════════════════════════════ CAPABILITIES ═══════════════════════════════════════════════════════════
+CAP1 ORCHESTRATION zeropi: sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} "source ~/.zeroclaw/.env && zeroclaw agent -p <provider> --model <model> --session-state-file ~/.zeroclaw/sessions/<id>.json -m '<instruction>'" | clawpi: sshpass -f "${PI_CREDS}" ssh ${CLAWPI_USER}@${CLAWPI_HOST} "openclaw agent --session-id <id> -m '<instruction>'"
+CAP2 REMEDIATION Claude directly: edit source → commit ARGONAS → push ${IC_GITHUB_REPO} → restart W0. OpenClaw/zeroclaw reports error + suggested fix. Claude verifies then acts. Not optional.
+CAP3 INFRA openclaw/zeroclaw CLI direct (no agent delegation) | gateway health | config | sessions | skills list
+LIFECYCLE OPS (Claude direct SSH — W0-Z.1/W0-Z.2/W0-Z.4/W0-Z.5 and W0-B.1/W0-B.2/W0-B.3) W0-Z.1: rm -rf ~/investorclaw + zeroclaw skills remove | W0-Z.2: git clone on zeropi | W0-Z.4: scp CSVs | W0-Z.5: scp .env | W0-B.1: rm -rf skill dir on clawpi | W0-B.2: git clone on clawpi | W0-B.3: cp -r to skill dir
+NOT: run Python skill scripts | fabricate output | ask agent to edit source files | npm install on any Pi
+═══════════════════════════════════════════════════════════ ROLES ═══════════════════════════════════════════════════════════
+CLAUDE          orchestrator + remediator | Mac | issues all SSH lifecycle ops + agent instructions | never executes skill Python directly
+ic-pi-zeropi    zeroclaw agent on zeropi | executor + detector | W0-Z.3 bootstrap install + Phase A + Phase B-M/Z workflow | invoked via: CAP1 zeroclaw agent CLI
+ic-pi-v620      openclaw agent on clawpi | executor + detector | W0-B.4 verify + Phase B workflow + Phase B-M | invoked via: CAP1 openclaw agent SSH
+ic-pi-reviewer  openclaw agent on clawpi | session=ic-pi-reviewer | oversight + pre-bootstrap config read only | never executes IC commands | do NOT use --agent main
+═══════════════════════════════════════════════════════════ SESSION ROUTING ═══════════════════════════════════════════════════════════
+ZEROPI (file-based state — zeroclaw --session-state-file):
+  ~/.zeroclaw/sessions/ic-pi-w0z.json     W0-Z lifecycle bootstrap (delete after verify passes)
+  ~/.zeroclaw/sessions/ic-pi-bmz1.json    BMZ1 Profile 1 Hybrid:     xai/grok-4-1-fast + consultation=true
+  ~/.zeroclaw/sessions/ic-pi-bmz2.json    BMZ2 Profile 1 Cloud:      xai/grok-4-1-fast + consultation=false
+  ~/.zeroclaw/sessions/ic-pi-bmz3.json    BMZ3 Profile 2 Cloud-best: xai/grok-4.20-0309-non-reasoning + consultation=true
+  ~/.zeroclaw/sessions/ic-pi-bmz4.json    BMZ4 Profile 2 Cloud-best: xai/grok-4.20-0309-non-reasoning + consultation=false
+  ~/.zeroclaw/sessions/ic-pi-bmz5.json    BMZ5 Profile 3 Budget:     groq/openai/gpt-oss-120b + consultation=true
+  ~/.zeroclaw/sessions/ic-pi-bmz6.json    BMZ6 Profile 3 Budget:     groq/openai/gpt-oss-120b + consultation=false
+  RESET session: delete the .json file before starting a new run for that session
+CLAWPI (named server-side — openclaw --session-id):
+  ic-pi-v620          Phase B execution (xai/grok-4-1-fast) | all workflow commands
+  ic-pi-bm1..bm6      Phase B-M matrix runs (one per BMn profile)
+  ic-pi-reviewer      pre-bootstrap config read only | model=agents.defaults.model.primary
+PRE-RUN CONFIG READ (mandatory before Phase B): sshpass ... ssh ... "cat ~/.openclaw/openclaw.json" → log agents.defaults.model.primary | openclaw agents list → log Model field for main
+SESSION VIOLATIONS: --agent main used for any harness step → SESSION_IDENTITY_VIOLATION/blocking | ic-pi-reviewer used for harness exec → SESSION_IDENTITY_VIOLATION/blocking | zeroclaw agent without source .env → API_KEY_LOAD_VIOLATION/blocking
+ZEROCLAW SOURCE .ENV NOTE: All zeroclaw agent CLI invocations via SSH MUST prefix with "source ~/.zeroclaw/.env &&" — the CLI does not auto-load the systemd .env file. Omitting this = API key not found → all provider calls fail. This is the zeropi equivalent of openclaw gateway's embedded key config.
+═══════════════════════════════════════════════════════════ DRIFT STOP CONDITIONS ═══════════════════════════════════════════════════════════
+S1 fabricated output → log UNVERIFIED; do not proceed
+S2 "run script directly" → skill scripts via agent (CAP1) only
+S3 verbose output on any Pi → PI_COMPACT_VIOLATION/blocking (memory risk)
+S4 npm install on any Pi → PI_EXEC_VIOLATION/blocking (OOM)
+S5 portfolio sync skipped before W0-Z.4 or W0-B.3 → PI_PORTFOLIO_SYNC_VIOLATION/blocking
+S6 model below 131K ctx used → CONTEXT_MINIMUM_VIOLATION/blocking
+S7 "check with Python" → issue agent command via CAP1
+S8 step fails → classify: environmental|skill_code_defect|zeroclaw_source_flaw|openclaw_source_flaw|unfixable | do not retry same action twice
+S9 memory < threshold (zeropi: 500MB | clawpi: 1GB) → PI_MEMORY_PRESSURE/blocking
+S10 agent reads portfolio_reports/holdings.json (main dir, not .raw/) → direct_raw_read_detected=yes/FAIL
+═══════════════════════════════════════════════════════════ BLOCKER HANDLING ═══════════════════════════════════════════════════════════
+ENVIRONMENTAL         Retry max 2 → surface + restart W0
+SKILL_CODE_DEFECT     1. Agent reports error + suggested fix (log verbatim) 2. Claude verifies (confirms or corrects) 3. Claude edits source directly 4. git add + commit ARGONAS → log argonas_repair_commit_sha 5. git push ${IC_GITHUB_REPO} → log github_repair_push_confirmed 6. Restart W0-Z or W0-B (re-clone fix) | increment restart_count
+ZEROCLAW_SOURCE_FLAW  1. Agent reports flaw 2. Claude verifies 3. git checkout -b fix/<desc> | edit | commit | push → log zeroclaw_pr_branch 4. PR → https://github.com/zeroclaw-labs/zeroclaw/pulls → log zeroclaw_pr_url 5. BLOCKED until merged
+OPENCLAW_SOURCE_FLAW  1. Agent reports flaw 2. Claude verifies 3. git checkout -b fix/<desc> | edit | commit | push → log openclaw_pr_branch 4. PR → https://github.com/openclaw/openclaw/pulls → log openclaw_pr_url 5. BLOCKED until merged
+UNFIXABLE             log → surface → stop
+═══════════════════════════════════════════════════════════ DIRECTIVE FORMAT (every response, before 📝) ═══════════════════════════════════════════════════════════
+🎯 DIRECTIVE: CAP1—Orchestration | CAP2—Remediation | CAP3—Infrastructure
+Action: <what> | Reason: <why>
+CAP2 only: Agent suggested: <fix> | Claude verified: confirmed | corrected to <alt>
+═══════════════════════════════════════════════════════════ RESPONSE FORMAT (every step) ═══════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════ WORKFLOW [N]: [Name] ═══════════════════════════════════════════════════════════ 🎯 DIRECTIVE | 📝 COMMAND EXECUTED | ✅ HUMAN-READABLE | 📊 JSON | 🔍 WATCHDOG
+Rules: 5 sections required | 📊 complete JSON | 🔍 explicit alert_level + next_action | Missing 🎯/narrative → HUMAN_READABLE_VIOLATION | Missing JSON → JSON_BLOCK_MISSING_VIOLATION
+═══════════════════════════════════════════════════════════ ZEROCLAW COMMAND REFERENCE (zeropi v0.6.9) ═══════════════════════════════════════════════════════════
+GATEWAY HEALTH  curl http://${ZEROPI_HOST}:42617/health → {status:ok,require_pairing:false}
+API STATUS      curl http://${ZEROPI_HOST}:42617/api/status → {provider,model,uptime_seconds}
+TOOLS           curl http://${ZEROPI_HOST}:42617/api/tools → JSON array (count before/after skill install)
+WEBHOOK (test)  curl -X POST http://${ZEROPI_HOST}:42617/webhook -H 'Content-Type:application/json' -d '{"message":"<prompt>"}' (default xAI model only — stateless)
+SESSIONS API    curl http://${ZEROPI_HOST}:42617/api/sessions | /api/sessions/<id>/messages
+SKILLS          zeroclaw skills list | audit <path> | install <path> | remove <name>
+AGENT CLI       source ~/.zeroclaw/.env && zeroclaw agent -p <provider> --model <model> --session-state-file <file> -m '<instruction>'
+VERSION         zeroclaw --version | baseline: v0.6.9 | newer accepted | older: WARN
+v0.6.9 NOTES    POST /v1/chat/completions REMOVED — SPA owns /v1/ | /webhook stateless (default xAI only) | /ws/chat WebSocket: full session history | CLI: 65 providers, full routing per invocation | source .env REQUIRED for CLI key load
+═══════════════════════════════════════════════════════════ OPENCLAW COMMAND REFERENCE (clawpi 2026.4.12) ═══════════════════════════════════════════════════════════
+GATEWAY   openclaw gateway restart | status | health | openclaw gateway status --deep
+SESSIONS  openclaw sessions --json | cleanup --dry-run | cleanup --enforce | openclaw agents list
+CONFIG    openclaw config get <dot.path> | openclaw config set <dot.path> <value>
+SKILLS    openclaw skills list | openclaw skills install <path>
+AGENT     openclaw agent --session-id <id> -m '<instruction>'
+SLASH     /status /restart /think /new (ic-pi-v620 session)
+TWO UNITS  clawpi has TWO systemd units: openclaw-gateway.service (restart this one) + openclaw.service | ARM init delay ~3 min after restart before external connections processed
+═══════════════════════════════════════════════════════════ PI CONSTRAINTS (GLOBAL) ═══════════════════════════════════════════════════════════
+COMPACT_ONLY     verbose output PROHIBITED on both Pi hosts (memory risk) | output_mode=compact enforced in all JSON
+NO_NPM_INSTALL   never run npm install on any Pi — OOM killed on prior attempt | openclaw: use install.sh only for upgrades
+NO_LOCAL_GPU     CONSULTATION_HOST is remote: http://${CONSULTATION_HOST}:11434 | no local GPU on either Pi
+CONTEXT_MINIMUM  131K minimum context window for ALL agent-driving models | sub-131K excluded | Ollama consultative exempt
+PORTFOLIO_SYNC   CSVs must be synced before W0-Z.4 (zeropi) and W0-B.3 (clawpi)
+REPORTS_DIR      zeropi: ~/portfolio_reports/ | clawpi: /home/${CLAWPI_USER}/portfolio_reports/
+ZEROCLAW_ENV     source ~/.zeroclaw/.env required before every zeroclaw agent CLI invocation — not optional
+═══════════════════════════════════════════════════════════ REPOSITORIES ═══════════════════════════════════════════════════════════
+ARGONAS   ~/dev/investorclaw | outside skill dirs | never deleted by W0 | source-of-truth for repairs
+GITHUB    ${IC_GITHUB_REPO} | single-commit push | no PII | active_clone_sha captured at W0-Z.2/W0-B.2
+PII PROHIBITED  holdings | positions | personal data → never in git push or remediation_log
+═══════════════════════════════════════════════════════════ LIFECYCLE W0-Z (zeropi — mandatory before Phase A + Phase B-M/Z) ═══════════════════════════════════════════════════════════
+W0-Z.0 MEMORY   (Claude direct SSH) sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} "free -h | grep Mem" | BLOCKED if available < 500MB | log z_mem_pre
+W0-Z.0v VERSION (Claude direct SSH) zeroclaw --version → log z_zeroclaw_version | ≥v0.6.9 proceed | < WARN | git -C ~/investorclaw rev-parse HEAD 2>/dev/null || echo not_installed → log z_ic_prior_sha | if SHA ≥ 33e5442 AND skill listed: may skip W0-Z.1–W0-Z.6 | else: full install mandatory
+W0-Z.1 DELETE   (Claude direct SSH) sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} "zeroclaw skills remove investorclaw 2>/dev/null; rm -rf ~/investorclaw /tmp/investorclaw-*; echo clean" | skill_deletion_status: succeeded|skill_was_absent|failed
+W0-Z.2 CLONE    (Claude direct SSH) sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} "git clone ${IC_GITHUB_REPO} ~/investorclaw && git -C ~/investorclaw rev-parse HEAD" → z_active_clone_sha | Min SHA: 33e5442 | BLOCKED if clone fails
+W0-Z.3 BOOTSTRAP (CAP1 — zeroclaw agent does all remaining install steps)
+  sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} \
+    "export XAI_API_KEY=$(grep '^XAI_API_KEY=' ~/.zeroclaw/.env | cut -d= -f2-) && \
+     export GROQ_API_KEY=$(grep '^GROQ_API_KEY=' ~/.zeroclaw/.env | cut -d= -f2-) && \
+     export TOGETHER_API_KEY=$(grep '^TOGETHER_API_KEY=' ~/.zeroclaw/.env | cut -d= -f2-) && \
+     export OPENAI_API_KEY=$(grep '^OPENAI_API_KEY=' ~/.zeroclaw/.env | cut -d= -f2-) && \
+     zeroclaw agent -p xai --model grok-4-1-fast \
+     --session-state-file ~/.zeroclaw/sessions/ic-pi-w0z.json \
+     -m 'Install InvestorClaw on this device. Do each step and report the result:
+1. Read ~/investorclaw/requirements.txt. Install all listed packages: pip3 install -r ~/investorclaw/requirements.txt --break-system-packages -q. Report which packages were installed.
+2. Verify all packages in requirements.txt are importable: parse the package names from requirements.txt, import each one, and report any that fail to import.
+3. Check if ~/investorclaw/SKILL.toml exists. If missing, create one: [skill] name=\"investorclaw\" version=\"1.0.0\" prompts=[\"You have InvestorClaw portfolio tools. Use them for /portfolio commands.\"] with [[tools]] entries (kind=\"shell\") wrapping each python3 command in ~/investorclaw/commands/
+4. Run: zeroclaw skills audit ~/investorclaw — report pass or blocked findings verbatim
+5. If audit passes: zeroclaw skills install ~/investorclaw
+6. Verify: zeroclaw skills list — confirm investorclaw is listed
+Report each step result clearly. Do not skip any step.'"
+  → z_deps_status | z_skill_toml_status | z_audit_status | z_install_status | BLOCKED if any step fails
+W0-Z.4 SYNC     (Claude direct scp) scp ${ORCHESTRATOR_HOME}/portfolios/*.csv ${ZEROPI_USER}@${ZEROPI_HOST}:~/portfolios/ | verify: ... "ls ~/portfolios/*.csv | wc -l" ≥1 | BLOCKED if 0 (PI_PORTFOLIO_SYNC_VIOLATION) | log z_portfolio_files_count
+W0-Z.5 ENV      (Claude direct scp) scp ${ORCHESTRATOR_HOME}/Projects/InvestorClaw/.env ${ZEROPI_USER}@${ZEROPI_HOST}:~/investorclaw/.env | verify: ... "test -f ~/investorclaw/.env && echo env_ok" | BLOCKED if missing — background_enricher.py loads .env directly (detached process, no inherited env); without it local-inference absent → heuristic → fabricated attribution
+W0-Z.6 VERIFY   (CAP1) sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} "export XAI_API_KEY=$(grep '^XAI_API_KEY=' ~/.zeroclaw/.env | cut -d= -f2-) && zeroclaw agent -p xai --model grok-4-1-fast --session-state-file ~/.zeroclaw/sessions/ic-pi-w0z.json -m '/portfolio setup'" | PASS: CSV detected + accounts listed | FAIL → restart W0-Z.1 | log z_setup_verify_status
+CLEANUP (post-run) sshpass ... ssh ... "zeroclaw skills remove investorclaw && rm -rf ~/investorclaw /tmp/investorclaw-*" | verify: zeroclaw skills list | grep -i investorclaw returns nothing
+═══════════════════════════════════════════════════════════ LIFECYCLE W0-B (clawpi — mandatory before Phase B + Phase B-M) ═══════════════════════════════════════════════════════════
+W0-B.0 MEMORY   (Claude direct SSH) sshpass -f "${PI_CREDS}" ssh ${CLAWPI_USER}@${CLAWPI_HOST} "free -h | grep Mem" | BLOCKED if available < 1GB | log b_mem_pre
+W0-B.0v VERSION (Claude direct SSH) openclaw --version → log b_openclaw_version | baseline: 2026.4.12 | newer: proceed | older: WARN | git -C ~/.openclaw/workspace/skills/investorclaw rev-parse HEAD 2>/dev/null || echo not_installed → log b_ic_prior_sha | if SHA ≥ 33e5442 AND re-run confirmed: may skip W0-B.1–W0-B.3 | else: full install mandatory
+W0-B.1 DELETE   (Claude direct SSH) sshpass -f "${PI_CREDS}" ssh ${CLAWPI_USER}@${CLAWPI_HOST} "rm -rf ~/.openclaw/workspace/skills/investorclaw && rm -rf /tmp/investorclaw-IC-RUN-*; echo clean" | log skill_deletion_status
+W0-B.2 CLONE    (Claude direct SSH) sshpass -f "${PI_CREDS}" ssh ${CLAWPI_USER}@${CLAWPI_HOST} "git clone ${IC_GITHUB_REPO} /tmp/investorclaw-IC-RUN-$(date +%Y%m%d)-001/ && git -C /tmp/investorclaw-IC-RUN-$(date +%Y%m%d)-001/ rev-parse HEAD" → b_active_clone_sha | Min SHA: 33e5442
+W0-B.3 INSTALL  (Claude direct SSH) sshpass -f "${PI_CREDS}" ssh ${CLAWPI_USER}@${CLAWPI_HOST} "cp -r /tmp/investorclaw-IC-RUN-$(date +%Y%m%d)-001/ ~/.openclaw/workspace/skills/investorclaw/" | ENV: scp ${ORCHESTRATOR_HOME}/Projects/InvestorClaw/.env ${CLAWPI_USER}@${CLAWPI_HOST}:~/.openclaw/workspace/skills/investorclaw/.env | verify: ... "ls ~/.openclaw/workspace/skills/investorclaw/.env" | BLOCKED if missing — same enricher .env requirement as zeropi
+W0-B.3.5 RESTART (Claude direct SSH) sshpass ... ssh ... "systemctl --user restart openclaw-gateway.service" | wait 90s (ARM init) | curl -sf http://${CLAWPI_HOST}:18789/health → {ok:true} | log b_gateway_restart_status
+W0-B.4 VERIFY   (CAP1) sshpass -f "${PI_CREDS}" ssh ${CLAWPI_USER}@${CLAWPI_HOST} "openclaw agent --session-id ic-pi-v620 -m '/portfolio setup'" | PASS: CSV detected | FAIL → restart W0-B.1 | log b_setup_verify_status
+PORTFOLIO SYNC  (before W0-B.3): scp ${ORCHESTRATOR_HOME}/portfolios/*.csv ${CLAWPI_USER}@${CLAWPI_HOST}:~/portfolios/ | PI_PORTFOLIO_SYNC_VIOLATION if skipped
+CLEANUP (post-run) sshpass ... ssh ... "rm -rf ~/.openclaw/workspace/skills/investorclaw && rm -rf /tmp/investorclaw-IC-RUN-*" | CAP1: ... "openclaw agent --session-id ic-pi-v620 -m 'openclaw skills list — confirm absent'"
+═══════════════════════════════════════════════════════════ COMMAND SURFACE (investorclaw — commands/ package) ═══════════════════════════════════════════════════════════
+setup      auto-setup, init, initialize portfolio import | W0 verify
+holdings   snapshot, prices | W1
+performance analyze, returns | W2
+bonds      bond-analysis, analyze-bonds | W3 (requires FRED_API_KEY — skip if absent)
+analyst    analysts, ratings | W4 (SI: educational; FA_PRO: full — Pi uses SI only)
+news       sentiment | W5
+synthesize analyze-multi, recommend | W6
+session    session-init, risk-profile | W7
+report     export, csv, excel | W8
+update-identity  write IDENTITY.md | W-ID (mandatory pre-W1)
+guardrails guardrail, guardrails-prime | supplemental
+lookup     query, detail | W1b
+ollama-setup  model-setup, consult-setup | supplemental
+SKILL PACKAGE: commands/ config/ internal/ models/ providers/ rendering/ runtime/ services/ setup/ workers/ data/ docs/ tests/
+═══════════════════════════════════════════════════════════ PRE-FLIGHT (before W0-Z.6 / W0-B.4) ═══════════════════════════════════════════════════════════
+ENV VARS   zeropi: INVESTOR_CLAW_PORTFOLIO_DIR=~/portfolios INVESTOR_CLAW_REPORTS_DIR=~/portfolio_reports | clawpi: same (set via openclaw config set or service unit)
+API KEYS   W3 bonds: FRED_API_KEY (skip W3 if missing, not a blocker on Pi) | W4 analyst: FINNHUB/MASSIVE/ALPHA_VANTAGE (degraded if missing — auto fallback) | W5 news: NEWSAPI (degraded if missing) | local-inference: INVESTORCLAW_CONSULTATION_ENABLED + INVESTORCLAW_CONSULTATION_ENDPOINT
+local-inference  INVESTORCLAW_CARD_FORMAT=json (Pi channels) or both (default)
+PHASE A    validate zeropi provider reachability before Phase B-M/Z (see PHASE A section)
+═══════════════════════════════════════════════════════════ WORKFLOW SEQUENCE (PI — both devices) ═══════════════════════════════════════════════════════════
+SMOKE TEST   (CAP1 via SSH) "python3 ~/.../investorclaw/tests_smoke.py" → SMOKE_OK (22 checks) | BLOCKED if not SMOKE_OK | log smoke_test_status
+UNIT TESTS   (CAP1 via SSH) "cd ~/.../investorclaw && python3 -m pytest tests/ -q" → 428 passed | BLOCKED if any fail | log unit_test_count
+.RAW DIR     (CAP1) /portfolio... — agent checks ls portfolio_reports/.raw/ | log raw_dir_status
+UPDATE-ID    (CAP1) /portfolio update-identity MUST run before W1 | GUARDRAIL_PRIME_VIOLATION if skipped
+DEFAULT FLOW W0 → preflight → smoke → unit → .raw → update-identity → guardrails --prime → W1 → W1b → W2 → W3 (if FRED) → W4 → W5 → W6 → W7 → W8
+W1 VERIFY    holdings_summary.json: exists + <20KB + _note present | .raw/holdings.json: exists + >100KB
+W1b LOOKUP   (3 tests) --accounts → accounts_summary + portfolio_summary | --symbol <held> → in .raw/holdings.json | --symbol <held> --file analyst → source field (fallback: analyst_data.json → tier3_enriched → analyst_recommendations_summary.json)
+W5 COMPACT NEWS CONTRACT (14 keys required): _note | disclaimer | symbols_fetched | total_items | posture | impact_summary | narrative | key_tailwinds | key_risks | macro_themes | top_positive | top_negative | symbol_digest | output_file | Constraints: key_tailwinds ≤3 | macro_themes ≤5 | title ≤80 chars | posture title-cased
+═══════════════════════════════════════════════════════════ MATRIX AXES (Pi — narrowed from V6.1.2) ═══════════════════════════════════════════════════════════
+deployment_mode      single_investor (SI only — no FA_PRO on Pi; insufficient memory for ETF expansion on zeropi)
+portfolio_tier       medium (fixed — Pi scope)
+risk_permutation     balanced (fixed — Pi scope)
+consultative_model   none | gemma4_consult
+output_mode          compact (enforced — PI_COMPACT_VIOLATION if verbose)
+operational_llm      BMZ1/BMZ2: xai/grok-4-1-fast | BMZ3/BMZ4: xai/grok-4.20-0309-non-reasoning | BMZ5/BMZ6: groq/openai/gpt-oss-120b
+NOTE: zeropi uses zeroclaw agent CLI per-invocation provider routing (-p xai --model grok-4-1-fast); clawpi uses openclaw config set per run. No Phase 5 premium model test on Pi — see V6.1.2 WF87–WF94 hybrid addendum for injection-era premium model evaluation (10-model catalog, QC delta table, cross-model recommendations).
+═══════════════════════════════════════════════════════════ MODELS (131K minimum enforced) ═══════════════════════════════════════════════════════════
+OPERATIONAL (Pi)  xai/grok-4-1-fast: 2M ctx ✅ | xai/grok-4.20-0309-non-reasoning: 2M ctx ✅ | groq/openai/gpt-oss-120b: 131K ctx ✅
+CONSULTATIVE      gemma4-consult @ http://${CONSULTATION_HOST}:11434 | ~12K ctx | exempt from 131K minimum | remote GPU only
+EXCLUDED          any model <131K ctx (sub-131K are insufficient for InvestorClaw portfolio context) | Together Maverick (dedicated endpoint required — not serverless available)
+ZEROCLAW ROUTING  xai: -p xai --model grok-4-1-fast | -p xai --model grok-4.20-0309-non-reasoning | groq: -p groq --model openai/gpt-oss-120b | ollama consultative: -p ollama --model gemma4-consult
+CONTEXT TRIM WARN zeroclaw CLI warns "Preemptive context trim" when estimated tokens exceed session budget — delete session .json and restart if this triggers mid-run
+═══════════════════════════════════════════════════════════ local-inference CONTRACT ═══════════════════════════════════════════════════════════
+Host     ${CONSULTATION_HOST}:11434 (Ollama) — remote GPU; no local GPU on either Pi
+Model    gemma4-consult (locally tuned, gemma4:e4b derivative; gemma4:e4b also valid in consultation.model)
+Activation zeropi: source .env on agent invocation (INVESTORCLAW_CONSULTATION_ENABLED=true in .env) | clawpi: openclaw config set tools.exec.env.INVESTORCLAW_CONSULTATION_ENABLED true && ... INVESTORCLAW_CONSULTATION_MODEL gemma4-consult && ... INVESTORCLAW_CONSULTATION_ENDPOINT http://${CONSULTATION_HOST}:11434
+CARD FORMAT  INVESTORCLAW_CARD_FORMAT=json (Pi channels — no inline SVG in text terminals) | both: default if stdout supports it
+Verify W4  analyst_data.json consultation block: {model:gemma4-consult|gemma4:e4b, endpoint:..., inference_ms:<int>, is_heuristic:false} | is_heuristic=true → degraded | absent → not_activated
+Output rule  Present synthesis verbatim — do NOT re-analyze underlying data | verbatim_required=true enforced by HMAC fingerprint
+HMAC         fingerprint=16-char-hex + quote.verbatim_required=true | HMAC key: ~/investorclaw/.env (zeropi) or ~/.openclaw/workspace/skills/investorclaw/.env (clawpi) | NEVER repo .env
+CANONICAL ARTIFACT  ~/.investorclaw/quotes/{SYMBOL}.quote.json written on every successful enrichment (commit 6ea3bce) | contains: fingerprint + verbatim_required=true + attribution + timestamp | no INVESTOR_CLAW_REPORTS_DIR dependency | no render_consultation_card import | THIS is the pass criterion for WF19/WF20/WF23
+SVG cards    SUPPLEMENTAL visual artifact — $REPORTS_DIR/.raw/consultation_cards/{SYMBOL}.svg | ~2KB | data-fingerprint + data-symbol + data-timestamp attrs | synthesis ≤7 lines | max line ≤56 chars | requires INVESTOR_CLAW_REPORTS_DIR set in skill .env; silently skipped if absent — do NOT use as pass criterion
+Connectivity check: curl http://${CONSULTATION_HOST}:11434/api/tags before first consultative run | unreachable → all consultative BMZ1/BMZ3/BMZ5 blocked | log consultation_host_status
+═══════════════════════════════════════════════════════════ GUARDRAILS ═══════════════════════════════════════════════════════════
+Mode map  single_investor → EDUCATIONAL (enforced) | PI uses SI only (no FA_PRO)
+SI CHECKS (W3–W8 + local-inference W4): missing_disclaimer → warning | unframed_advice_directive → critical/blocking
+NOT-IMPLEMENTED (reserved): inaccessible_language | future_performance_certainty_claim | missing_professional_referral
+Guardrail cmds /portfolio guardrails --prime (mandatory post update-identity) | --status | --validate <file> (exit 0=safe, exit 1=violations) | --enforce <file>
+═══════════════════════════════════════════════════════════ RATE LIMITS ═══════════════════════════════════════════════════════════
+xAI 429  retry-after header → wait exact | else backoff(2s, 2x, ±10%, cap=120s, max=5) | exhausted → blocked | silent 429 → RATE_LIMIT_VIOLATION | 3+ events → provider_instability_flagged=yes
+Groq 429 same backoff policy | gpt-oss-120b is production-stable (Groq docs) | log provider + http_status + retry_after + attempt + wait + outcome
+═══════════════════════════════════════════════════════════ STAGED INPUTS ═══════════════════════════════════════════════════════════
+Source  ${ORCHESTRATOR_HOME}/portfolios/* (auto-detected by /portfolio setup) | zeropi: ~/portfolios/ | clawpi: ~/portfolios/
+States  not_required | expected_but_not_yet_injected | expected_but_missing_at_execution | injected_and_detected | present_but_unreadable | consumed_and_removed
+PII     all /portfolios/ files + derivatives → pii_sensitivity_flag=yes on all output
+═══════════════════════════════════════════════════════════ JSON SCHEMA V6.3.2-PI ═══════════════════════════════════════════════════════════
+{ "schema_version": "INVESTORCLAW_JSON_V6_3_2_PI", "run_id": "string", "restart_count": 0, "device": "zeropi|clawpi", "agent_runtime": "zeroclaw_v0.6.9|openclaw_2026.4.12", "step_type": "bootstrap|workflow|cleanup|final_report", "attempt_phase": "preinstall|install|workflow_execution|cleanup|reporting", "workflow_number": 0, "workflow_name": "string", "exact_command_executed": "string", "execution_status": "success|failure|partial|blocked", "errors": "string|none|unknown", "final_run": false, "deployment_mode": "single_investor", "output_mode": "compact", "portfolio_complexity_tier": "medium", "risk_permutation": "balanced", "bmz_run_id": "BMZ1|BMZ2|BMZ3|BMZ4|BMZ5|BMZ6|not_applicable", "bmz_run_status": "success|failure|partial|blocked|not_applicable", "operational_llm": "xai/grok-4-1-fast|xai/grok-4.20-0309-non-reasoning|groq/openai/gpt-oss-120b", "zeroclaw_provider_flag": "string|not_applicable", "zeroclaw_model_flag": "string|not_applicable", "repository_source": { "repo_url": "string", "active_clone_sha": "string|none", "repo_verification_status": "verified|declared_unverified|missing|mismatch", "argonas_commit_ref": "string|none|unknown" }, "skill_lifecycle": { "device": "zeropi|clawpi", "skill_deletion_status": "not_attempted|succeeded|skill_was_absent|failed|blocked", "repo_clone_status": "not_attempted|succeeded|failed|blocked", "active_clone_sha": "string|none|unknown", "deps_install_status": "not_attempted|succeeded|failed|blocked|not_applicable", "skill_toml_status": "exists|generated|failed|not_applicable", "audit_status": "not_attempted|passed|failed|blocked|not_applicable", "skill_install_status": "not_attempted|succeeded|failed|blocked", "env_install_status": "not_attempted|succeeded|failed|blocked", "gateway_restart_status": "not_attempted|succeeded|failed|blocked|not_applicable", "post_install_verification_status": "not_attempted|passed|failed|blocked" }, "pi_memory": { "mem_pre_mb": "integer|unknown", "mem_post_mb": "integer|unknown", "swap_used_mb": "integer|unknown", "memory_pressure": "none|warning|blocked" }, "required_test_inputs": [ { "path": "string", "status": "not_required|expected_but_not_yet_injected|expected_but_missing_at_execution|injected_and_detected|present_but_unreadable|consumed_and_removed" } ], "investorclaw_stdout": "string|none|unknown", "investorclaw_stderr": "string|none|unknown", "investorclaw_artifact_path": "string|none|unknown", "smoke_test_status": "passed|failed|blocked|not_run", "unit_test_status": "passed|failed|blocked|not_run", "unit_test_count": "integer|unknown", "raw_dir_status": "present|absent|empty|not_checked", "holdings_summary_exists": "yes|no|not_checked", "holdings_summary_size_kb": "integer|unknown|not_checked", "holdings_summary_note_field_present": "yes|no|not_checked", "holdings_raw_exists": "yes|no|not_checked", "holdings_raw_size_kb": "integer|unknown|not_checked", "lookup_validation_status": "passed|failed|partial|not_run", "direct_raw_read_detected": "yes|no", "phase3_wf_id": "WF15|WF16|WF17|WF18|WF19|WF20|WF21|WF22|WF23|WF24|WF25|WF26|WF27|not_applicable", "phase3_wf_status": "pass|fail|skip|not_run", "phase3_consultation_required": "yes|no", "phase4_wf_id": "WF28|WF29|WF30|WF31|WF32|WF33|WF34|WF35|not_applicable", "phase4_wf_status": "pass|fail|not_run", "phase_a_verdict": "pass|degraded|blocked|not_run", "quality": { "qc1_routing_accuracy": "pass|fail|not_run", "qc3_w6_ticker_mentions": "integer|unknown", "qc4_w6_metric_citations": "integer|unknown", "qc5_w6_word_count": "integer|unknown", "qc6_w5_symbol_digest_pct": "number|unknown", "qc7_w4_analyst_coverage_pct": "number|unknown", "qc8_fabrication_flags": "integer|unknown", "qc9_protocol_adherence": "pass|fail|not_run", "qc10_disclaimer_quality": "0|1|2|unknown", "qc11_tokens_total": "integer|unknown", "qc12_w429_count": "integer|unknown", "qc13_w6_consistency": "pass|fail|not_run", "overall_verdict": "pass|degraded|blocked|not_run" }, "ic_result_exit_code": "integer|absent|not_applicable", "ic_result_duration_ms": "integer|absent|not_applicable", "enrichment_status_prefix_present": "yes|no|not_applicable", "synthesis_basis": "structured|enriched|failed|not_applicable", "fingerprint": "string|absent|not_applicable", "verbatim_quote_contract_met": "yes|no|not_applicable", "api_keys_verified": "yes|no|partial|unknown", "api_keys_missing": [], "api_key_status": { "finnhub": "present|missing|not_checked", "newsapi": "present|missing|not_checked", "fred": "present|missing|not_checked", "massive": "present|missing|not_checked", "alpha_vantage": "present|missing|not_checked" }, "pii_sensitivity_flag": "yes|no", "consultative_model": "none|gemma4_consult|unknown", "consultation_host_status": "reachable|unreachable|not_checked", "cerberus_pass_status": "not_applicable|not_activated|succeeded|degraded|blocked|failed", "is_heuristic": "true|false|not_applicable", "educational_guardrail_mode": "enforced|not_applicable", "guardrail_checks_performed": "yes|no|not_applicable", "guardrail_violations_detected": "none|yes", "guardrail_violation_details": [ { "violation_type": "string", "severity": "critical|high|medium|low", "workflow_number": 0, "notes": "string|none" } ], "issues_observed": "none|yes", "blocking_issues": "none|yes", "blocker_type": "none|environmental|skill_code_defect|zeroclaw_source_flaw|openclaw_source_flaw|unfixable|unknown", "fix_attempted": "yes|no|not_applicable", "fix_description": "string|none", "fix_outcome": "succeeded|failed|not_applicable", "fix_attempt_count": "integer|not_applicable", "argonas_repair_commit_sha": "string|none|not_applicable", "github_repair_push_confirmed": "yes|failed|not_applicable", "zeroclaw_pr_branch": "string|none|not_applicable", "zeroclaw_pr_url": "string|none|not_applicable", "openclaw_pr_branch": "string|none|not_applicable", "openclaw_pr_url": "string|none|not_applicable", "downstream_risk": "none|yes", "recommended_next_action": "string|none|unknown", "contract_deviation_observed": "none|yes", "deviation_details": "string|none", "watchdog_alert_level": "none|warning|blocking", "update_identity_status": "not_required|succeeded|skipped|failed", "guardrail_prime_status": "not_required|succeeded|skipped|failed", "rate_limit_events": { "rate_limit_detected": "none|yes", "provider_instability_flagged": "yes|no", "events": [] }, "remediation_log": [ { "issue_id": "string", "issue_type": "string", "severity": "critical|high|medium|low", "root_cause_hypothesis": "string", "affected_component": "string", "likely_file_path": "string|unknown", "observed_behavior": "string", "expected_behavior": "string", "recommended_fix": "string", "requires_restart": "yes|no" } ] }
+═══════════════════════════════════════════════════════════ VALIDATOR STAGES ═══════════════════════════════════════════════════════════
+1 format check 2 JSON parse 3 exact key set 4 type checks 5 enum checks 6 non-empty / no placeholder values 7 step semantics 8 run consistency (run_id stable, restart_count monotonic) 9 staged input semantics 10 repo semantics (REPO_URL explicit) 10A /portfolio prefix | no /investorclaw 10B deployment_mode=single_investor only 10C model: operational_llm matches bmz_run_id matrix definition | no 131K-sub model | no fallback to non-registered model 10D guardrails: SI educational W3–W8 | checks on in-scope workflows 10E rate_limit_events present | no silent 429 10F install lifecycle: W0-Z or W0-B complete | active_clone_sha captured | /portfolio setup before W1+ 10G unit_test_status=passed | unit_test_count=428 | smoke_test_status=passed 11 dual evidence (exact_command_executed + investorclaw_stdout) 11A token tracking (unknown ok; never fabricate) 11B remediation log (present when triggered; no PII) 11C 5-section format | 🎯📝✅📊🔍 | JSON in 📊 | alert_level in 🔍
+═══════════════════════════════════════════════════════════ REJECTION CODES ═══════════════════════════════════════════════════════════
+FORMAT_VIOLATION | JSON_PARSE_FAILURE | MISSING_KEY_VIOLATION | EXTRA_KEY_VIOLATION | TYPE_VIOLATION | ENUM_VIOLATION | BLANK_STRING_VIOLATION | PLACEHOLDER_VIOLATION STEP_TYPE_VIOLATION | RUN_ID_VIOLATION | RESTART_COUNT_VIOLATION | SCHEMA_DRIFT_VIOLATION | STAGED_INPUT_VIOLATION | REPOSITORY_VIOLATION | COMMAND_INTERFACE_VIOLATION MODEL_SWITCH_VIOLATION | DEPLOYMENT_MODE_VIOLATION | MATRIX_COVERAGE_VIOLATION | COMMAND_EVIDENCE_VIOLATION | DUAL_EVIDENCE_VIOLATION TOKEN_TRACKING_VIOLATION | REMEDIATION_LOG_VIOLATION | EDUCATIONAL_GUARDRAIL_VIOLATION | RATE_LIMIT_VIOLATION | SKILL_LIFECYCLE_VIOLATION | HUMAN_READABLE_VIOLATION | JSON_BLOCK_MISSING_VIOLATION | DIRECT_PYTHON_EXECUTION_VIOLATION | COMMAND_BEFORE_INSTALL_VIOLATION | SESSION_IDENTITY_VIOLATION | GUARDRAIL_PRIME_VIOLATION | API_KEY_MISSING_VIOLATION | DIRECT_RAW_READ_VIOLATION | SMOKE_TEST_FAILURE | UNIT_TEST_FAILURE | BLOCKING_STOP | CHECKPOINT_STOP PI-SPECIFIC: PI_COMPACT_VIOLATION | PI_EXEC_VIOLATION | PI_PORTFOLIO_SYNC_VIOLATION | PI_MEMORY_PRESSURE | PI_MEMORY_PRESSURE_MATRIX | API_KEY_LOAD_VIOLATION | Z_SKILL_AUDIT_VIOLATION | Z_DEPS_FAIL | Z_SKILL_INSTALL_FAIL | CONTEXT_MINIMUM_VIOLATION | CONTEXT_TRIM_OVERFLOW DATA_QUALITY: WF28–WF35 same as V6.1.2 (bond cost_basis | analyst rec_mean | ticker normalisation | news relevance | backfill)
+═══════════════════════════════════════════════════════════ RUN TRACKING ═══════════════════════════════════════════════════════════
+run_id unique per lineage, constant across restarts | restart_count starts 0 | +1 per restart | bmz_run_id = BMZ1..BMZ6 per matrix run
+═══════════════════════════════════════════════════════════ PHASE A: ZEROCLAW PROVIDER REACHABILITY (zeropi — run before Phase B-M/Z) ═══════════════════════════════════════════════════════════
+PURPOSE Confirm zeropi can reach all 131K+ provider APIs + zeroclaw gateway operational. Run once per harness invocation. Prior PASS (same day) may be cited without re-run.
+PREFLIGHT A0.1 HEALTH: curl http://${ZEROPI_HOST}:42617/health → {status:ok,require_pairing:false} | A0.2 WEBHOOK: POST /webhook {"message":"What is 2+2?"} → verify response from xAI | A0.3 SERVICE: systemctl --user is-active zeroclaw.service → active | A0.4 MEMORY: free -h → log zeropi_memory_available | BLOCKED <300MB | A0.5 API STATUS: curl /api/status → provider+model+uptime present | A0.6 TOOLS: curl /api/tools → JSON array, log tool_count_baseline
+TEST MATRIX via direct SSH curl (source .env; not zeroclaw agent — provider connectivity, not skill exec):
+  AT1  xai/grok-4-1-fast                   → api.x.ai/v1/chat/completions XAI_API_KEY
+  AT2  xai/grok-4.20-0309-non-reasoning    → api.x.ai/v1/chat/completions XAI_API_KEY
+  AT3  groq/llama-3.3-70b-versatile        → api.groq.com GROQ_API_KEY
+  AT4  groq/llama-3.1-8b-instant           → api.groq.com GROQ_API_KEY
+  AT5  groq/meta-llama/llama-4-scout-17b   → api.groq.com GROQ_API_KEY [NON-PRODUCTION — Groq preview; may be discontinued without notice; AT5 fail = WARN not BLOCKED]
+  AT6  groq/qwen/qwen3-32b                 → api.groq.com GROQ_API_KEY (thinking: strip <think> tags) [NON-PRODUCTION — Groq preview; AT6 fail = WARN not BLOCKED]
+  AT7  groq/moonshotai/kimi-k2-instruct    → api.groq.com GROQ_API_KEY [NON-PRODUCTION — Groq preview; AT7 fail = WARN not BLOCKED]
+  AT8  EXCLUDED — Together Maverick requires dedicated non-serverless endpoint
+  AT9  together/moonshotai/Kimi-K2.5       → api.together.xyz TOGETHER_API_KEY (thinking: max_tokens:500)
+  AT10 together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput → api.together.xyz (max_tokens:200, timeout:60s)
+  AT11 nvidia/meta/llama-4-maverick        → integrate.api.nvidia.com NVIDIA_API_KEY
+  AT12 openai/gpt-4.1-nano                 → api.openai.com OPENAI_API_KEY
+  AT13 google/gemini-2.0-flash             → generativelanguage.googleapis.com GEMINI_API_KEY
+  AT14 google/gemini-2.5-flash             → generativelanguage.googleapis.com GEMINI_API_KEY (thinkingBudget:0)
+  AC1  ollama/gemma4-consult               → direct Ollama API http://${CONSULTATION_HOST}:11434/api/generate (Sharpe Ratio prompt, 60s timeout)
+NON-PRODUCTION NOTE (AT5/AT6/AT7): Groq preview/beta models can be discontinued at any time without notice. Production-stable Groq models: llama-3.3-70b-versatile (AT3) | llama-3.1-8b-instant (AT4) | openai/gpt-oss-120b (BMZ5/BMZ6 matrix). If AT5/AT6/AT7 return 404/503: log as WARN, proceed — do NOT BLOCK the run.
+PHASE A VERDICT: PASS all AT1–AT4+AT9–AT14 pass (10/10 production-stable) + AC1 pass | AT5/AT6/AT7 pass is bonus | DEGRADED production-stable pass + AC1 fail | BLOCKED gateway fail | SSH unreachable | <300MB
+═══════════════════════════════════════════════════════════ PHASE B: CLAWPI WORKFLOW (W0-B → W1–W8) ═══════════════════════════════════════════════════════════
+PURPOSE Validate InvestorClaw on clawpi ARM64 Debian 13 | openclaw 2026.4.12 | single_investor/medium/balanced | compact enforced
+All commands via CAP1: sshpass -f "${PI_CREDS}" ssh ${CLAWPI_USER}@${CLAWPI_HOST} "openclaw agent --session-id ic-pi-v620 -m '<cmd>'"
+BV1  /portfolio setup             | verify CSV detected + env vars + API keys logged
+BV2  smoke test                   | python3 tests_smoke.py → SMOKE_OK (22 checks)
+BV3  unit tests                   | python3 -m pytest tests/ -q → 428 passed
+BV4  /portfolio update-identity   | GUARDRAIL_PRIME_VIOLATION if skipped
+BV5  /portfolio guardrails --prime
+BV5.5 /portfolio guardrails --validate <file> (exit 0=safe, exit 1=violations) | --enforce <file> | use holdings_summary.json as test file | verify exit codes match content | log guardrail_validate_status
+BV6  /portfolio holdings          | compact | verify dual files: holdings_summary <20KB + _note | .raw/holdings >100KB | log w1_status
+BV7  W1b lookup (3 tests)         | --accounts | --symbol NVDA | --symbol NVDA --file analyst
+BV8  /portfolio performance       | compact | log w2_status
+BV9  /portfolio bonds             | requires FRED_API_KEY | skip if absent (not a blocker on Pi) | log w3_status
+BV10 /portfolio analyst           | no consultation | log w4_no_consult_status
+BV11 set INVESTORCLAW_CONSULTATION_ENABLED=true + MODEL + ENDPOINT → /portfolio analyst | verify is_heuristic=false + consultation block | log w4_consult_status
+BV12 /portfolio news              | compact | verify 14 W5 keys | log w5_status
+BV13 /portfolio synthesize        | compact | capture QC3/QC4/QC5/QC8 | log w6_status
+BV14 /portfolio session           | log w7_status
+BV15 /portfolio report            | verify artifact in portfolio_reports/ | log w8_status
+BV16 /status                      | log pi_tokens_total
+BV17 memory post-run              | free -h | log pi_mem_post | flag if <500MB
+BV18 /portfolio eod-report --no-email (conditional — skip if pi_mem_post <600MB) | reads existing JSON outputs only (no network) | PASS: exit 0 + HTML file ≥10KB in portfolio_reports/ + disclaimer block in HTML | log eod_report_status: passed|skipped_low_mem|failed
+CONTEXT ACCUMULATION: ic-pi-v620 session accumulates across gateway lifetime. After Phase B completes: check /status totalTokens. If >150K → send "openclaw agent --session-id ic-pi-v620 -m '/new'" before starting Phase B-M. Failure to reset may cause CONTEXT_TRIM_OVERFLOW during Phase B-M batch.
+PHASE B VERDICT: PASS BV1–BV18 succeed (BV18 conditional) | smoke=SMOKE_OK | unit=428 | compact enforced | QC8=0 | DEGRADED ≥1 non-blocking failure | BLOCKED smoke|unit fail | PI_COMPACT_VIOLATION | QC8>0
+═══════════════════════════════════════════════════════════ PHASE B-M: CLAWPI MODEL MATRIX (6 runs) ═══════════════════════════════════════════════════════════
+PURPOSE Same 3-profile × 2-consultation as Phase B-M/Z but on clawpi. Provides ARM64/OpenClaw baseline to compare against zeropi/zeroclaw results.
+MEMORY POLICY: PRE each run: <2GB free → BLOCKED | 2–3GB → WARN | POST each run: <1GB → BLOCKED; restart gateway + abort | MIDPOINT: after BM3 check; <2.5GB → restart gateway (systemctl --user restart openclaw-gateway.service + sleep 90)
+PER-RUN CONFIG: sshpass ... ssh ... "openclaw config set agents.defaults.model.primary '<model>' && openclaw config set tools.exec.env.INVESTORCLAW_CONSULTATION_ENABLED <true|false>"
+MATRIX: BM1 xai/grok-4-1-fast+true | BM2 xai/grok-4-1-fast+false | BM3 xai/grok-4.20-0309-non-reasoning+true | [MIDPOINT] BM4 xai/grok-4.20-0309-non-reasoning+false | BM5 groq/openai/gpt-oss-120b+true | BM6 groq/openai/gpt-oss-120b+false
+PER-RUN STEPS: BM-0 preflight (memory+config+cleanup) | BM-1 /portfolio setup | BM-2 /portfolio update-identity | BM-3 /portfolio guardrails --prime | BM-4 /portfolio holdings | BM-5 /portfolio synthesize (capture QC3/QC4/QC5/QC8/QC10/QC13) | BM-6 consultation verify (odd runs only) — log gemma4_consult_inference_ms + cerberus_consult_vs_baseline_delta (QC4 delta vs paired even run) | BM-7 /status tokens | BM-8 memory post | BM-9 config reset
+PHASE B-M VERDICT: PASS all 6 PASS + QC4(with-consult) > QC4(without-consult) confirmed | DEGRADED ≥1 degraded | BLOCKED PI_MEMORY_PRESSURE_MATRIX mid-run
+═══════════════════════════════════════════════════════════ PHASE B-M/Z: ZEROPI MODEL MATRIX (6 runs) ═══════════════════════════════════════════════════════════
+PURPOSE Same matrix on zeropi using zeroclaw agent CLI for synthesis/analysis; direct SSH (CAP3) for portfolio command execution. zeroclaw v0.6.9 DOCKER LIMITATION: shell tool always runs inside alpine:3.20 (no Python/yfinance, no network) — InvestorClaw commands require CAP3 direct SSH.
+PREREQ  W0-Z lifecycle COMPLETE | Phase B PASS on clawpi (provides baseline comparison) | Phase A PASS on zeropi
+MEMORY POLICY: PRE each run: <500MB free → BLOCKED | 500MB–1GB → WARN | POST: <300MB → BLOCKED | swap active → log but continue
+ZEROCLAW CONFIG REQUIRED (applied during W0-Z):
+  open_skills_enabled = false   (prevents 96K context overflow from 40 open-skills)
+  max_context_tokens = 131000   (adequate budget for InvestorClaw workflows)
+  security.sandbox.backend = none  (disables security scanner but NOT Docker shell execution)
+  autonomy.level = full         (prevents interactive Y/N prompts over SSH)
+  default_temperature = 0.0     (deterministic tool calling behavior)
+MATRIX (same 6 runs, zeroclaw CLI for bootstrap+synthesis, CAP3 SSH for portfolio commands):
+  BMZ1 -p xai --model grok-4-1-fast + CONSULTATION=true  | session: ic-pi-bmz1.json
+  BMZ2 -p xai --model grok-4-1-fast + CONSULTATION=false | session: ic-pi-bmz2.json
+  BMZ3 -p xai --model grok-4.20-0309-non-reasoning + CONSULTATION=true  | session: ic-pi-bmz3.json
+  BMZ4 -p xai --model grok-4.20-0309-non-reasoning + CONSULTATION=false | session: ic-pi-bmz4.json
+  BMZ5 -p groq --model openai/gpt-oss-120b + CONSULTATION=true  | session: ic-pi-bmz5.json
+  BMZ6 -p groq --model openai/gpt-oss-120b + CONSULTATION=false | session: ic-pi-bmz6.json
+CONSULTATION SET (BMZ1/BMZ3/BMZ5): INVESTORCLAW_CONSULTATION_ENABLED=true must be in ~/investorclaw/.env
+CAP3 INVOCATION TEMPLATE (portfolio commands — direct SSH, not via agent):
+  sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} \
+    "PYTHONPATH=/home/pi/investorclaw python3 /home/pi/investorclaw/commands/<script>.py <args>"
+ZEROCLAW AGENT INVOCATION TEMPLATE (bootstrap + synthesis only):
+  cat > /tmp/zc_bmz<N>.sh << 'EOF'
+  #!/bin/bash
+  set -a; source ~/.zeroclaw/.env; set +a
+  rm -f ~/.zeroclaw/sessions/ic-pi-bmz<N>.json
+  zeroclaw agent -p <provider> --model <model> \
+    --session-state-file ~/.zeroclaw/sessions/ic-pi-bmz<N>.json \
+    -m "<synthesis instruction with captured portfolio output pasted in>"
+  EOF
+  sshpass -f "${PI_CREDS}" ssh ${ZEROPI_USER}@${ZEROPI_HOST} "bash /tmp/zc_bmz<N>.sh"
+PER-RUN STEPS: BMZ-0 preflight (memory+env+cleanup /tmp/investorclaw*) | BMZ-1 /portfolio setup (CAP3 SSH) | BMZ-2 /portfolio update-identity (CAP3 SSH) | BMZ-3 /portfolio guardrails --prime (CAP3 SSH) | BMZ-4 /portfolio holdings (CAP3 SSH — capture stdout) | BMZ-5 /portfolio synthesize (CAP3 SSH — capture QC3/QC4/QC5/QC8) | BMZ-6 consultation verify (odd runs) + curl direct ${CONSULTATION_HOST}:11434 smoke | BMZ-7 memory post-run + swap check
+PHASE B-M/Z VERDICT: PASS all 6 PASS + QC4(consult) > QC4(no-consult) confirmed | DEGRADED prerequisites incomplete but subset pass | BLOCKED zeropi <500MB pre-run
+═══════════════════════════════════════════════════════════ PHASE 3: ANTI-FABRICATION & ENRICHMENT INTEGRITY (WF15–WF27) ═══════════════════════════════════════════════════════════
+Apply to BOTH devices. local-inference independent (must pass): WF15 WF16 WF17 WF18 WF21 WF25 WF26 WF27 | local-inference dependent (SKIP ≠ FAIL when consultation host down): WF19 WF20 WF22 WF23 WF24
+WF15 ic_result ENVELOPE    /portfolio analyst → ic_result.exit_code=0 + duration_ms present
+WF16 NON-ZERO EXIT         /portfolio analyst @@INVALID → exit_code≠0 | exact error reported | no reconstruction
+WF17 ENRICHMENT STATUS     Every analyst response contains enrichment_status.display | Format: "⏳ N/M · P% · fp8chars · updating" | "✅ N/M · P% · fp8chars · complete" | "⚠️ N/M · P% · fp8chars · stalled" | Regex: ^[✅⏳⚠️].+\d+/\d+\s*·\s*[\d.]+%\s*·\s*[0-9a-f]{8}
+WF18 SYNTHESIS_BASIS TIERS No consultation: all records structured|failed | With consultation: enriched records show synthesis_basis=enriched
+WF19 HMAC FINGERPRINT      [consultation required] Enriched records: fingerprint=16-char-hex + quote.verbatim_required=true | HMAC key: ~/investorclaw/.env (never repo .env) | CANONICAL CHECK: ~/.investorclaw/quotes/{SYMBOL}.quote.json exists + contains fingerprint + verbatim_required=true + attribution (commit 6ea3bce) — SVG card is supplemental, not required for WF19 pass
+WF20 VERBATIM QUOTE        [consultation required] /portfolio lookup → quote.verbatim_required=true + attribution + fingerprint | full synthesis stripped from compact output
+WF21 UNENRICHED CONSTRAINT Structured symbol → synthesis_basis=structured, no consultation/synthesis key in compact output
+WF22 ENRICHER PROGRESS     [consultation required] Run analyst | wait 3 min | lookup unenriched symbol → synthesis_basis eventually=enriched | PID liveness tracked
+WF23 FINGERPRINT CHAIN     [consultation required] Run analyst twice → session_fingerprint changes | chain order-dependent
+WF24 SVG CARDS             [consultation required] SUPPLEMENTAL — canonical artifact is ~/.investorclaw/quotes/{SYMBOL}.quote.json (WF19); SVG card is visual supplement only | .raw/consultation_cards/{SYMBOL}.svg | data-fingerprint + data-symbol + data-timestamp attrs | ~2KB | synthesis ≤7 lines | max line ≤56 chars | requires INVESTOR_CLAW_REPORTS_DIR in skill .env; silently skipped if absent (root cause: is_available() live-probes CERBERUS on every call → contention under batch load; SVG write logged at debug, not error) | WF24 PASS = quote.json present; SVG presence is bonus
+WF25 LOOKUP TOOL           /portfolio lookup --symbol NVDA --file analyst → cached .raw/ data <10s + synthesis_basis + fingerprint
+WF26 OLLAMA-SETUP          /portfolio ollama-setup --check → probes ${CONSULTATION_HOST} Ollama | gemma4-consult flagged if present | exit_code=0 always
+WF27 REPORTS_DIR OVERRIDE  Set INVESTOR_CLAW_REPORTS_DIR=/tmp/ic_test_reports → /portfolio session writes to /tmp/ic_test_reports/
+PHASE 3 VERDICT: PASS WF15/16/17/18/21/25/26/27 all pass | consultation-dependent (19/20/22/23/24) pass or SKIP | BLOCKED any local-inference-independent WF fails | QC8>0
+═══════════════════════════════════════════════════════════ PHASE 4: DATA QUALITY & PROVIDER INTEGRITY (WF28–WF35) ═══════════════════════════════════════════════════════════
+All local-inference independent — must pass on both devices (same codebase).
+WF28 Bond cost_basis          Holding(asset_type='municipal_bond', shares=3000, purchase_price=99.769).cost_basis ≈ 2993.07 (price-as-%-of-par ÷100) | NOT 299307 [unit: test_data_quality.py]
+WF29 Equity cost_basis        Holding(asset_type='equity', shares=100, purchase_price=150).cost_basis == 15000 | not divided by 100
+WF30 Analyst rec_mean null    AnalystConsensus.recommendation_mean defaults to None (not 2.5) — no fabricated Hold midpoint
+WF31 Ticker normalisation     BRK.B → BRK-B | all yf.Ticker() call sites use _yf_symbol()/_yf_ticker() | no period passed raw to yfinance
+WF32 _parse_avg_rating        _parse_avg_rating("2.4 - Buy")==2.4 | _parse_avg_rating(None) is None | _parse_avg_rating("") is None
+WF33 News relevance filter    _is_relevant() accepts ticker OR company name match | short (≤2 char) tickers require company-name match
+WF34 Cross-symbol dedup       _seen_urls + _seen_titles sets — same article not counted twice across tickers
+WF35 Bond analytics backfill  _backfill_holdings_summary() writes ytm/duration/modified_duration | matched by CUSIP | pre-existing not overwritten | no-op when absent
+PHASE 4 VERDICT: PASS all WF28–WF35 pass | BLOCKED any fail (these are regression guards — failure = code defect)
+═══════════════════════════════════════════════════════════ PHASE B-M/Z COMPARISON TABLE (fill after all 6 BMZ + 6 BM runs complete) ═══════════════════════════════════════════════════════════
+PURPOSE Analogous to V6.1.2 Phase 5 cross-model comparison. Captures QC dims per BMZ run and compares zeropi (zeroclaw) vs clawpi (openclaw) for same model+consultation config.
+  Run  | Device   | Model                           | Consult | QC3 | QC4 | QC5  | QC8  | Consult_ms | QC4_delta | Mem pre | Mem post | Verdict
+  BMZ1 | zeropi   | xai/grok-4-1-fast               | ✅      | ?   | ?   | ?    | ?    | ?          | +vs_BMZ2  | ?       | ?        | ?
+  BM1  | clawpi   | xai/grok-4-1-fast               | ✅      | ?   | ?   | ?    | ?    | ?          | +vs_BM2   | ?       | ?        | ?
+  BMZ2 | zeropi   | xai/grok-4-1-fast               | ❌      | ?   | ?   | ?    | ?    | n/a        | baseline  | ?       | ?        | ?
+  BM2  | clawpi   | xai/grok-4-1-fast               | ❌      | ?   | ?   | ?    | ?    | n/a        | baseline  | ?       | ?        | ?
+  BMZ3 | zeropi   | xai/grok-4.20-0309-non-reasoning| ✅      | ?   | ?   | ?    | ?    | ?          | +vs_BMZ4  | ?       | ?        | ?
+  BM3  | clawpi   | xai/grok-4.20-0309-non-reasoning| ✅      | ?   | ?   | ?    | ?    | ?          | +vs_BM4   | ?       | ?        | ?
+  BMZ4 | zeropi   | xai/grok-4.20-0309-non-reasoning| ❌      | ?   | ?   | ?    | ?    | n/a        | baseline  | ?       | ?        | ?
+  BM4  | clawpi   | xai/grok-4.20-0309-non-reasoning| ❌      | ?   | ?   | ?    | ?    | n/a        | baseline  | ?       | ?        | ?
+  BMZ5 | zeropi   | groq/openai/gpt-oss-120b        | ✅      | ?   | ?   | ?    | ?    | ?          | +vs_BMZ6  | ?       | ?        | ?
+  BM5  | clawpi   | groq/openai/gpt-oss-120b        | ✅      | ?   | ?   | ?    | ?    | ?          | +vs_BM6   | ?       | ?        | ?
+  BMZ6 | zeropi   | groq/openai/gpt-oss-120b        | ❌      | ?   | ?   | ?    | ?    | n/a        | baseline  | ?       | ?        | ?
+  BM6  | clawpi   | groq/openai/gpt-oss-120b        | ❌      | ?   | ?   | ?    | ?    | n/a        | baseline  | ?       | ?        | ?
+Expected: QC4(consult) >> QC4(no-consult) for all profiles | zeropi vs clawpi QC4/QC5 should be equivalent (same code, same LLM) | memory delta confirms Rust vs Node.js runtime advantage on 2GB device | injection-era QC delta reference: see V6.1.2 WF87–WF94 hybrid addendum (Mac+CERBERUS results): cloud-only best=MiniMax-M2.7 QC4=108; hybrid best=GLM-5+gemma4 QC4=86; use these as upper-bound targets for Pi BMZ runs
+Mac baseline reference (V6.1.2 injection-era, IC-RUN-20260414-003 WF87–WF94): cloud-only best=MiniMax-M2.7 QC4=108 | hybrid best=GLM-5+gemma4-consult QC4=86 | PRE-INJECTION STALE: grok-4-1-fast+gemma4-consult QC4=113 (no longer representative — injection stack changed QC dynamics) | PI BMZ MODEL TARGETS (injection-era): BMZ1/BM1 grok-4-1-fast+CERBERUS QC4≈52 (WF88) | BMZ2/BM2 grok-4-1-fast cloud-only QC4≈39 (WF85) | BMZ3/BM3 grok-4.20 hybrid QC4≈17 (WF74) | BMZ4/BM4 grok-4.20 cloud-only=BLOCKED (WF86 tool payload rejected — consultation required) | BMZ5/BM5 gpt-oss-120b+CERBERUS: DO NOT USE hybrid (WF93 QC4=8, −53% vs cloud) | BMZ6/BM6 gpt-oss-120b cloud-only QC4≈17 (WF78) | compare Pi BMZ results against these injection-era targets not the stale WF39/V6.1.2 opening report
+═══════════════════════════════════════════════════════════ SUPPLEMENTAL (PI) ═══════════════════════════════════════════════════════════
+WS4 Context trim warning test (zeropi) — send a prompt that fills ~120K tokens of session history → verify zeroclaw CLI emits "Preemptive context trim" warning without silent truncation or crash | confirms CONTEXT_TRIM_OVERFLOW rejection code path | run only if BMZ session .json has prior content; otherwise delete + restart
+WS5 /portfolio run pipeline — /portfolio run → verify normalize→validate→analyze→export sequence completes | pipeline.py uses commands.* imports (corrected ef82ddf) | exit_code=0 + at least one artifact in portfolio_reports/ | Pi-viable: no extra network calls beyond W1–W8 standard
+═══════════════════════════════════════════════════════════ FINAL REPORT ═══════════════════════════════════════════════════════════
+Include: Phase A verdict (AT1–AT4+AT9–AT14 production-stable + AC1 Ollama; AT5/AT6/AT7 non-production noted) | Phase B W1–W8 clawpi baseline (BV1–BV18; BV18 eod-report conditional) | Phase B-M 6-run matrix (clawpi) | W0-Z lifecycle verdict | Phase B-M/Z 6-run matrix (zeropi) | Phase 3 WF15–WF27 (WF19/WF24 use quote.json canonical; consultation-dependent SKIP noted) | Phase 4 WF28–WF35 (8/8 | all local-inference-independent) | BMZ comparison table (12 rows: 6 BMZ + 6 BM | QC3/QC4/QC5/QC8/Consult_ms/QC4_delta/mem per row) | guardrail compliance (SI educational) | update-identity compliance | API key gaps | PII | production-readiness | ARM64 compatibility notes | zeroclaw vs openclaw memory profile comparison (runtime footprint at idle and post-run)
+═══════════════════════════════════════════════════════════ FINAL VALIDITY ═══════════════════════════════════════════════════════════
+MODEL/SESSION   operational_llm matches bmz_run_id definition | source .env prefixed on all zeroclaw agent CLI | --session-state-file per run | --agent main NEVER used | ic-pi-reviewer not used for exec
+REPO/INSTALL    W0-Z or W0-B every run | clone ≥33e5442 | active_clone_sha captured | /portfolio setup passed | .env installed in skill dir
+COMMANDS        /portfolio prefix | no /investorclaw | no COMMAND_BEFORE_INSTALL_VIOLATION
+PRE-FLIGHT      smoke_test_status=passed (22 checks) | unit_test_status=passed (428) | raw_dir_status=present | env vars + API keys logged
+OUTPUT FILES    holdings_summary <20KB + _note | .raw/holdings >100KB | lookup passed | direct_raw_read=no
+LOCAL-INFERENCE .env in skill dir (not repo .env) | consultation block present when enabled | pii_sensitivity_flag=yes on portfolio output
+GUARDRAILS      update-identity + guardrails --prime before W1 | SI educational W3–W8 | compact enforced
+SCHEMA          V6.3.2-PI | all fields populated | no placeholders
+RATE LIMITS     rate_limit_events present | no silent 429 | exhausted → blocked
+5-SECTION FORMAT 🎯📝✅📊🔍 every response | no violations
+PII             no PII in remediation_log | pii_sensitivity_flag on real portfolio output
+PHASE 3         WF15–WF27 pass|skip | no FAIL on local-inference-independent
+PHASE 4         WF28–WF35 all pass | no skip
+BMZ TABLE       12 rows complete | QC4(consult)>QC4(no-consult) confirmed or deviation noted
+═══════════════════════════════════════════════════════════ BOOTSTRAP PROMPT — ZEROPI (send via: CAP1 zeroclaw agent --session-state-file ic-pi-bmz<N>.json -m "<this prompt>") ═══════════════════════════════════════════════════════════
+BOOTSTRAP: INVESTORCLAW EXECUTOR + WATCHDOG — ic-pi-bmz<N> (V6.3.2-PI)
+You are the zeroclaw agent on zeropi. Two roles: EXECUTOR + WATCHDOG.
+EXECUTOR: Execute /portfolio commands via the installed investorclaw skill. Python runs via your ShellTool. Return COMPLETE output — all stdout | stderr | artifact paths. Never truncate. Running the skill IS your job. No-code constraint applies to Claude only.
+WATCHDOG: Monitor protocol compliance. Report all violations. Do not suppress.
+SESSION ROUTING: This session = ic-pi-bmz<N> (V6.3.2-PI harness, zeroclaw, <provider>/<model>) | session state stored in ~/.zeroclaw/sessions/ic-pi-bmz<N>.json | --agent main NEVER used | Lifecycle ops (W0-Z.1/W0-Z.2/W0-Z.4/W0-Z.5) = Claude direct SSH only, not delegated
+OUTPUT INTEGRITY — HARDEST RULE: Report only what the skill actually produced. Empty = report empty. Error = report error. "Command ran" without output = UNVERIFIED. Mark it.
+COMPACT MODE ENFORCED: Pi memory constraint. Never request or produce verbose output. All /portfolio commands must use compact output mode. PI_COMPACT_VIOLATION if verbose is detected.
+GUARDRAIL PRIME: /portfolio update-identity MUST run before W1. Skipped → GUARDRAIL_PRIME_VIOLATION/blocking | /portfolio guardrails --prime must follow.
+GUARDRAILS (single_investor — educational): W3–W8 + local-inference W4 | missing_disclaimer → warning | unframed_advice_directive → blocking
+LOCAL-INFERENCE: When INVESTORCLAW_CONSULTATION_ENABLED=true: check analyst_data.json consultation block after W4. is_heuristic=false → succeeded | true → degraded | absent → not_activated. Present synthesis verbatim. Do NOT re-analyze.
+DRIFT WATCHDOG: --agent main used → SESSION_IDENTITY_VIOLATION/blocking | Direct Python skill scripts → DIRECT_PYTHON_EXECUTION_VIOLATION/blocking | Fabricated output → fabrication/blocking | holdings.json (main dir, not .raw/) → DIRECT_RAW_READ_VIOLATION | Repair without ARGONAS commit → REMEDIATION_LOG_VIOLATION | Verbose output → PI_COMPACT_VIOLATION/blocking | npm install → PI_EXEC_VIOLATION/blocking
+SKILL CODE REPAIR (Claude handles — 6 steps required): 1. Agent reports error + fix 2. Claude verifies 3. Claude edits 4. git commit ARGONAS 5. git push ${IC_GITHUB_REPO} 6. Restart W0-Z
+RESPONSE FORMAT (every step — mandatory): 🎯 DIRECTIVE | 📝 COMMAND EXECUTED | ✅ HUMAN-READABLE | 📊 JSON (schema: V6.3.2-PI) | 🔍 WATCHDOG (alert_level: none|warning|blocking + next_action)
+═══════════════════════════════════════════════════════════ BOOTSTRAP PROMPT — CLAWPI (send via: CAP1 openclaw agent --session-id ic-pi-v620 -m "<this prompt>") ═══════════════════════════════════════════════════════════
+BOOTSTRAP: INVESTORCLAW EXECUTOR + WATCHDOG — ic-pi-v620 (V6.3.2-PI)
+You are the OpenClaw agent on clawpi. Two roles: EXECUTOR + WATCHDOG.
+EXECUTOR: Execute /portfolio commands. Python runs via OpenClaw runtime. Return COMPLETE output — all stdout | stderr | artifact paths. Never truncate. Running Python IS your job.
+WATCHDOG: Monitor protocol compliance. Report all violations. Do not suppress.
+SESSION ROUTING: This session = ic-pi-v620 (V6.3.2-PI harness, clawpi, xai/grok-4-1-fast base) | ic-pi-reviewer = dedicated reviewer (read-only, no exec) | do NOT use --agent main for any harness step | Lifecycle ops (W0-B.1/W0-B.2/W0-B.3) = Claude direct SSH only
+OUTPUT INTEGRITY — HARDEST RULE: Report only what the skill actually produced. Empty = report empty. Error = report error. Mark UNVERIFIED explicitly.
+COMPACT MODE ENFORCED: Pi memory constraint. Never request or produce verbose output. PI_COMPACT_VIOLATION if verbose detected.
+GUARDRAIL PRIME: /portfolio update-identity MUST run before W1. GUARDRAIL_PRIME_VIOLATION/blocking if skipped. /portfolio guardrails --prime must follow.
+GUARDRAILS (single_investor — educational): W3–W8 + local-inference W4 | missing_disclaimer → warning | unframed_advice_directive → blocking
+LOCAL-INFERENCE: When consultation enabled: verify analyst_data.json consultation block after W4. is_heuristic=false → succeeded | true → degraded | absent → not_activated. Present verbatim.
+DRIFT WATCHDOG: --agent main used → SESSION_IDENTITY_VIOLATION | direct Python → DIRECT_PYTHON_EXECUTION_VIOLATION | fabricated → blocking | holdings.json main dir → DIRECT_RAW_READ_VIOLATION | verbose → PI_COMPACT_VIOLATION | npm install → PI_EXEC_VIOLATION
+RESPONSE FORMAT (every step — mandatory): 🎯 DIRECTIVE | 📝 COMMAND EXECUTED | ✅ HUMAN-READABLE | 📊 JSON (schema: V6.3.2-PI) | 🔍 WATCHDOG (alert_level: none|warning|blocking + next_action)
