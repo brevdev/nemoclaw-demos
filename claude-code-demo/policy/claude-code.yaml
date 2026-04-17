@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Claude Code + GitHub proxy policy template for NemoClaw.
+#
+# The sandbox does NOT connect to api.anthropic.com or github.com directly.
+# Instead, it connects to host-side proxies that inject the API keys.
+# Neither key ever enters the sandbox.
+#
+# - claude-proxy.py (port 9202) → proxies to api.anthropic.com with x-api-key
+# - github-proxy.py (port 9203) → proxies git HTTPS traffic with GitHub PAT
+#
+# The install.sh script dynamically generates the actual policy with the
+# correct host IP and port, then applies it via `openshell policy set`.
+#
+# Template (for reference only):
+#
+# network_policies:
+#   claude_api:
+#     name: claude_api
+#     endpoints:
+#       - host: <HOST_IP>
+#         port: 9202
+#         protocol: rest
+#         enforcement: enforce
+#         tls: passthrough
+#         rules:
+#           - allow: { method: POST, path: "/**" }
+#           - allow: { method: GET, path: "/**" }
+#     binaries:
+#       - { path: /usr/local/bin/node }
+#
+#   claude_github:
+#     name: claude_github
+#     endpoints:
+#       - host: <HOST_IP>
+#         port: 9203
+#         protocol: rest
+#         enforcement: enforce
+#         tls: passthrough
+#         rules:
+#           - allow: { method: GET, path: "/**" }
+#           - allow: { method: POST, path: "/**" }
+#           - allow: { method: PUT, path: "/**" }
+#           - allow: { method: PATCH, path: "/**" }
+#     binaries:
+#       - { path: /usr/bin/git }
+#       - { path: /usr/local/bin/node }
