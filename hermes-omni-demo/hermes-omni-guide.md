@@ -232,10 +232,13 @@ openshell sandbox exec -n $SANDBOX -- grep NVIDIA_API_KEY /sandbox/.hermes-data/
 
 ## Part 7: Add a Test Video
 
-Omni needs a video to look at. Generate a short synthetic one with `ffmpeg` on the host (or bring your own MP4):
+Omni needs a video file **inside the sandbox** to analyze. You have two options.
+
+### Option A: Generate a synthetic test clip with ffmpeg
+
+No content needed, runs offline. Good for a first smoke test.
 
 ``` bash
-# Simple test clip: title card + color bars + spoken text if espeak-ng is available
 ffmpeg -y \
   -f lavfi -i "testsrc=duration=20:size=320x240:rate=15" \
   -f lavfi -i "sine=frequency=440:duration=20" \
@@ -243,19 +246,29 @@ ffmpeg -y \
   /tmp/test-video.mp4
 ```
 
-Or use any MP4 you already have — something under 3 minutes works best.
+### Option B: Bring your own MP4
 
-Upload it into the sandbox:
+Any MP4 will do — a screen recording, a short clip from a lecture, a product demo. Keep it under ~3 minutes / ~16 MB for best results (that's the practical payload ceiling per Omni API call).
+
+If your file lives elsewhere on your host, copy or symlink it to `/tmp/test-video.mp4` first, or just use its real path in the upload command below.
+
+### Upload to the sandbox
+
+The sandbox has its own filesystem — a file at `/tmp/foo.mp4` on the host is **not** visible at `/tmp/foo.mp4` in the sandbox until you upload it. Use `openshell sandbox upload SOURCE DEST/`:
 
 ``` bash
-openshell sandbox upload $SANDBOX /tmp/test-video.mp4 /tmp/test-video.mp4
+openshell sandbox upload $SANDBOX /tmp/test-video.mp4 /tmp/
 ```
 
-Verify:
+> Trailing slash on the destination matters — it tells openshell to drop the file inside `/tmp/`. Without the slash, you can get a nested directory.
+
+Verify the file landed:
 
 ``` bash
 openshell sandbox exec -n $SANDBOX -- ls -la /tmp/test-video.mp4
 ```
+
+The rest of the guide assumes the video is at `/tmp/test-video.mp4` inside the sandbox. If you used a different name, substitute accordingly in the prompts below.
 
 ### Smoke-test the analyzer before touching Hermes
 
