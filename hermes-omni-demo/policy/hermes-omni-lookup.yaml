@@ -1,0 +1,49 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Sandbox policy preset for the Hermes + Omni + NemoClaw cookbook.
+#
+# Adds two whitelisted knowledge sources:
+#   - Wikipedia REST API (path-restricted to /api/rest_v1/page/summary/**
+#     and /w/api.php so raw /wiki/ pages remain blocked)
+#   - Free Dictionary API (path-restricted to /api/v2/entries/**)
+#
+# Both are python3-only: curl, wget, and node cannot reach them.
+# Everything else stays deny-by-default.
+
+preset:
+  name: hermes-omni-lookup
+  description: "Whitelist Wikipedia + Free Dictionary for the Hermes Omni cookbook jargon-lookup demo."
+  notes: |
+    Apply AFTER `nemoclaw onboard --agent hermes`. Call:
+      openshell policy set --policy policy/hermes-omni-lookup.yaml <SANDBOX>
+    The baseline Hermes policy (nvidia, pypi, nous_research, ...) is preserved —
+    this preset only adds the wikipedia + free_dictionary blocks.
+
+network_policies:
+  wikipedia:
+    name: wikipedia
+    endpoints:
+      - host: en.wikipedia.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/api/rest_v1/page/summary/**" }
+          - allow: { method: GET, path: "/w/api.php" }
+    binaries:
+      - { path: /usr/bin/python3.11 }
+
+  free_dictionary:
+    name: free_dictionary
+    endpoints:
+      - host: api.dictionaryapi.dev
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/api/v2/entries/**" }
+    binaries:
+      - { path: /usr/bin/python3.11 }
