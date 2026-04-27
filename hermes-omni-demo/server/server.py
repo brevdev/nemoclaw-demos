@@ -30,6 +30,7 @@ import yaml
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 SANDBOX = os.environ.get("SANDBOX", "my-assistant")
@@ -958,6 +959,15 @@ async def _wait_for_policy_loaded(timeout_s: float = 12.0) -> bool:
                 return True
         await asyncio.sleep(0.4)
     return False
+
+
+# ──────────────── serve the built UI on the same port ──────────────
+# Mounted last so /api/* routes still resolve. If ui/dist doesn't exist
+# yet (UI not built), the server still runs API-only.
+
+UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
+if UI_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(UI_DIST), html=True), name="ui")
 
 
 if __name__ == "__main__":
