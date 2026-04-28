@@ -9,7 +9,7 @@ Runs on the host. Talks to the NemoClaw sandbox via the openshell CLI:
   - GET  /api/video?path=... → serves a video file out of the sandbox (or host)
 
 Env:
-  SANDBOX         Sandbox name (default: my-assistant)
+  SANDBOX         Sandbox name (default: my-hermes)
   UPLOAD_DIR      Host scratch dir (default: /tmp/omni-demo-uploads)
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-SANDBOX = os.environ.get("SANDBOX", "my-assistant")
+SANDBOX = os.environ.get("SANDBOX", "my-hermes")
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/tmp/omni-demo-uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
