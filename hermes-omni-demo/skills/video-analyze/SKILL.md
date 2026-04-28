@@ -1,7 +1,7 @@
 ---
 name: video-analyze
 description: Analyze video files using Nemotron 3 Nano Omni multimodal model. Handles a single video, image, audio file, a directory of PDF-rendered pages, OR a directory of pre-chunked video segments for long videos. Use whenever the user provides a video path and wants it analyzed, described, summarized, or transcribed.
-version: 3.0.0
+version: 3.1.0
 metadata:
   hermes:
     tags: [video, omni, multimodal, transcript, analysis, nemotron, long-video, chunked]
@@ -18,7 +18,7 @@ Analyze videos, audio, images, and documents using NVIDIA's Nemotron 3 Nano Omni
 | `*.mp4 / .mov / .webm` | One Omni call with the full video |
 | `*.mp3 / .wav / .m4a` | One Omni call with audio |
 | `*.png / .jpg / .webp` | One Omni call with the image |
-| Directory of PNGs (e.g. `*.pdf-pages/`) | One Omni call with all pages as multi-image |
+| Directory of PNGs (e.g. `*.pdf-pages/`) | If ≤ 8 pages, one Omni call. If > 8 pages, batched (8 pages per call) + synthesis — Omni's per-request image cap is 8. |
 | **Directory of MP4 chunks (e.g. `*-chunks/`)** | **Per-chunk Omni call + final synthesis** (long-video path) |
 
 The chunked directory path expects `chunk_001.mp4`, `chunk_002.mp4`, … and a `chunks.json` manifest produced by the host-side `chunk-upload.sh` helper. If `chunks.json` is missing, the skill falls back to probing each chunk's duration to derive timestamps.

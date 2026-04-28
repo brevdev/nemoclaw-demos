@@ -42,6 +42,11 @@ VIDEO_EXTS = {"mp4", "mov", "webm", "mkv", "avi"}
 CHUNK_MAX_TOKENS = 3072
 SYNTHESIS_MAX_TOKENS = 4096
 
+# Omni's chat-completions endpoint accepts at most this many image_url
+# blocks per request. PDFs / image dirs over this length are split into
+# batches, then synthesized.
+MAX_IMAGES_PER_CALL = 8
+
 
 def get_duration(video_path: str):
     try:
@@ -356,6 +361,118 @@ def analyze_chunked(chunk_dir: str, prompt: str = None):
     }
 
 
+# ─── batched-PDF / large-image-dir path ────────────────────────────────────
+
+
+def _load_image_dir(path: str) -> list:
+    """Return sorted list of image file paths in a directory."""
+    return sorted(
+        os.path.join(path, f)
+        for f in os.listdir(path)
+        if os.path.splitext(f)[1].lstrip(".").lower() in IMAGE_EXTS
+    )
+
+
+def analyze_image_dir_batched(pages_dir: str, prompt: str = None):
+    """For directories of > MAX_IMAGES_PER_CALL images (typically PDFs).
+
+    Splits pages into batches, sends each batch to Omni separately, then
+    synthesizes the per-batch analyses into one user-facing answer.
+    """
+    pages = _load_image_dir(pages_dir)
+    if not pages:
+        sys.exit(f"No images found in {pages_dir}")
+
+    if prompt is None:
+        prompt = (
+            "Read the document carefully and describe its content: what it "
+            "says, what figures or tables appear, and the overall structure."
+        )
+
+    n_pages = len(pages)
+    n_batches = (n_pages + MAX_IMAGES_PER_CALL - 1) // MAX_IMAGES_PER_CALL
+
+    print(f"Document input: {pages_dir}")
+    print(f"{n_pages} pages → {n_batches} batches of up to {MAX_IMAGES_PER_CALL}")
+    print(f"User prompt: {prompt!r}\n")
+
+    batch_results = []
+    total_tokens = 0
+    for i in range(n_batches):
+        first = i * MAX_IMAGES_PER_CALL
+        last = min((i + 1) * MAX_IMAGES_PER_CALL, n_pages)
+        batch_pages = pages[first:last]
+        first_n, last_n = first + 1, last
+
+        batch_prompt = (
+            f"This is pages {first_n}–{last_n} of a {n_pages}-page document. "
+            f"The user's overall question is: {prompt}\n\n"
+            f"Describe what is on THESE pages specifically. Cite the page "
+            f"number when referencing content (e.g. 'on page {first_n}…'). "
+            f"Stay focused on observable text, figures, and structure — leave "
+            f"final conclusions for the synthesis step."
+        )
+
+        content = [{"type": "text", "text": batch_prompt}]
+        for p in batch_pages:
+            with open(p, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            ext = os.path.splitext(p)[1].lstrip(".").lower() or "png"
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/{ext};base64,{b64}"},
+            })
+
+        payload = {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": content}],
+            "max_tokens": CHUNK_MAX_TOKENS,
+        }
+        print(f"[{i + 1}/{n_batches}] pages {first_n}-{last_n}...")
+        try:
+            r = _post(payload)
+            batch_results.append({
+                "first_page": first_n,
+                "last_page": last_n,
+                "analysis": r["content"],
+                "tokens": r["tokens"],
+            })
+            total_tokens += r["tokens"]
+            print(f"    ok — {r['tokens']} tokens")
+        except Exception as e:
+            print(f"    ! batch {i + 1} failed: {e}", file=sys.stderr)
+            batch_results.append({
+                "first_page": first_n,
+                "last_page": last_n,
+                "analysis": f"[batch failed: {e}]",
+                "tokens": 0,
+            })
+
+    print(f"\nSynthesizing across {n_batches} batches...")
+    summaries = "\n\n".join(
+        f"=== Pages {b['first_page']}–{b['last_page']} ===\n{b['analysis']}"
+        for b in batch_results
+    )
+    synthesis_prompt = (
+        f"Below are per-batch analyses of a {n_pages}-page document, in page "
+        f"order. The user asked: {prompt}\n\n"
+        f"Write ONE coherent answer to the user's question. Cite page numbers "
+        f"when useful. Do NOT enumerate batches — write a unified response.\n\n"
+        f"{summaries}"
+    )
+    synthesis = call_omni_text(synthesis_prompt, max_tokens=SYNTHESIS_MAX_TOKENS)
+    total_tokens += synthesis["tokens"]
+
+    print("\n--- Omni Synthesis ---")
+    print(synthesis["content"])
+    print(f"\n[{total_tokens} total tokens across {n_batches} batch calls + 1 synthesis]")
+    return {
+        "batches": batch_results,
+        "synthesis": synthesis["content"],
+        "total_tokens": total_tokens,
+    }
+
+
 # ─── transcript mode (single input only) ───────────────────────────────────
 
 
@@ -452,5 +569,9 @@ if __name__ == "__main__":
         transcript_single(args.video)
     elif _is_chunk_dir(args.video):
         analyze_chunked(args.video, args.prompt)
+    elif os.path.isdir(args.video) and len(_load_image_dir(args.video)) > MAX_IMAGES_PER_CALL:
+        # Multi-image directory (typically a long PDF) — too many pages for
+        # one Omni call, so batch + synthesize.
+        analyze_image_dir_batched(args.video, args.prompt)
     else:
         analyze_single(args.video, args.prompt)

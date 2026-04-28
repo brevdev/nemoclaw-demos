@@ -429,7 +429,7 @@ In the chat:
 Read the document at /tmp/document-pages — what's the main argument?
 ```
 
-For PDFs that fit in context (≤ ~50 pages comfortably), this beats chunk-and-embed RAG: layout, figures, and tables stay together in one Omni call.
+Omni's per-request image cap is 8 images. The skill auto-batches PDFs longer than that — the same chunk-and-synthesize pattern as long videos. For an 8-page PDF, the skill makes one call. For 30 pages, it makes 4 batch calls plus one synthesis call. Cost is linear in page count (~few thousand tokens per page).
 
 ## See the policy block
 
