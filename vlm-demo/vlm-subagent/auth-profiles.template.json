@@ -1,0 +1,7 @@
+{
+  "providers": {
+    "nvidia-omni": {
+      "apiKey": "YOUR_NVIDIA_API_KEY_HERE"
+    }
+  }
+}

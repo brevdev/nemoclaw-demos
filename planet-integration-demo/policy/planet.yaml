@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Planet API proxy policy template for Tier 1 integration.
+#
+# The sandbox does NOT connect to api.planet.com or tiles.planet.com directly.
+# Instead, it connects to the host-side planet-proxy.py which injects the
+# API key and forwards requests. The API key never enters the sandbox.
+#
+# The install.sh script dynamically generates the actual policy block with
+# the correct host IP and port, then applies it via `openshell policy set`.
+#
+# Template (for reference only):
+#
+# network_policies:
+#   planet_proxy:
+#     name: planet_proxy
+#     endpoints:
+#       - host: <HOST_IP>
+#         port: 9201
+#         protocol: rest
+#         enforcement: enforce
+#         tls: passthrough
+#         rules:
+#           - allow: { method: GET, path: "/**" }
+#           - allow: { method: POST, path: "/**" }
+#     binaries:
+#       - { path: /usr/local/bin/node }

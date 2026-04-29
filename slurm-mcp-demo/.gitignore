@@ -1,0 +1,6 @@
+.venv/
+.env
+fake_host_key
+__pycache__/
+*.pyc
+
