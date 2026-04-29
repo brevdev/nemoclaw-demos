@@ -31,7 +31,7 @@ When prompted:
 2. **API Key**: Paste your NVIDIA API key (starts with `nvapi-`)
 3. **Model**: Choose `1` (Nemotron 3 Super 120B)
 4. **Sandbox name**: Enter a name like `hclaw`
-5. **Policy presets**: Accept suggested (pypi, npm) with `Y`
+5. **Policy presets**: Choose "Balanced" and accept suggested (pypi, npm)
 
 Wait for the build + image upload to finish. Save the tokenized URL it prints.
 
@@ -42,14 +42,20 @@ Everything below uses these — set them once:
 ```bash
 SANDBOX=hclaw
 DOCKER_CTR=openshell-cluster-nemoclaw
-source ~/.env   # loads NVIDIA_API_KEY
+source <(jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' ~/.nemoclaw/credentials.json)   # loads NVIDIA_API_KEY
 ```
 
 ## Step 4: Update the OpenShell network policy
 
-OpenShell's Privacy Router (`inference.local`) is a single-model endpoint — it
-rewrites every request to the one configured model (Super 120B). The Omni model
+OpenShell's Privacy Router (`inference.local`) is currently a single-model endpoint — it
+rewrites every request to the one configured model (Super 120B). For now the Omni model
 must bypass the Privacy Router and call the NVIDIA API directly.
+
+```[NOTE]
+Support for multiple models in OpenShell is on the roadmap and once it lands the following section will be simplified.
+
+See https://github.com/NVIDIA/OpenShell/issues/896 for more information.
+```
 
 The default sandbox policy allows `integrate.api.nvidia.com` and
 `inference-api.nvidia.com`, but only for the `claude` and `openclaw` binaries.
@@ -73,7 +79,7 @@ sed -n '8,$p' /tmp/raw-policy.txt > /tmp/current-policy.yaml
 
 ### 4b. Add `/usr/local/bin/node` to the `nvidia` policy block
 
-Find the `nvidia:` section and add `node` to its `binaries` list. Before:
+Open `/tmp/current-policy.yaml` in your editor and find the `nvidia:` section and add `node` to its `binaries` list. Before:
 
 ```yaml
     binaries:
@@ -89,8 +95,6 @@ After:
     - path: /usr/local/bin/openclaw
     - path: /usr/local/bin/node
 ```
-
-A reference copy of the patched policy is at `oclaw/policy.yaml`.
 
 ### 4c. Apply the updated policy
 
@@ -109,7 +113,7 @@ You should see:
 Verify with:
 
 ```bash
-openshell policy get $SANDBOX --full | grep -A 5 "nvidia:" | grep node
+openshell policy get $SANDBOX --full | grep -A 50 "nvidia:" | grep node
 ```
 
 ## Step 5: Patch openclaw.json in the sandbox
@@ -130,14 +134,14 @@ config = json.load(sys.stdin)
 
 api_key = sys.argv[1] if len(sys.argv) > 1 else "unused"
 
-config["models"]["providers"]["nvidia-omni"] = {
+config["models"]["providers"]["nvidia"] = {
     "baseUrl": "https://integrate.api.nvidia.com/v1",
     "apiKey": api_key,
     "api": "openai-completions",
     "models": [
         {
-            "id": "private/nvidia/nemotron-3-nano-omni-reasoning-30b-a3b",
-            "name": "nvidia-omni/private/nvidia/nemotron-3-nano-omni-reasoning-30b-a3b",
+            "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            "name": "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
             "reasoning": True,
             "input": ["text", "image"],
             "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
@@ -163,7 +167,8 @@ config["agents"]["list"] = [
     },
     {
         "id": "vision-operator",
-        "model": {"primary": "nvidia-omni/private/nvidia/nemotron-3-nano-omni-reasoning-30b-a3b"},
+        "workspace": "/sandbox/.openclaw/workspace",
+        "model": {"primary": "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"},
         "tools": {
             "profile": "full",
             "deny": ["message", "sessions_spawn"]
@@ -220,7 +225,7 @@ vision-operator calls the NVIDIA API directly and needs the key.
 cat > /tmp/auth-profiles.json << EOF
 {
   "providers": {
-    "nvidia-omni": {
+    "nvidia": {
       "apiKey": "$NVIDIA_API_KEY"
     }
   }
@@ -228,6 +233,9 @@ cat > /tmp/auth-profiles.json << EOF
 EOF
 
 # Write it to the vision-operator's agent directory
+docker exec -i $DOCKER_CTR kubectl exec -i -n openshell $SANDBOX \
+  -- bash -c 'mkdir -p /sandbox/.openclaw-data/agents/vision-operator/agent/ && chown -R sandbox:sandbox /sandbox/.openclaw-data/agents/vision-operator'
+  
 docker exec -i $DOCKER_CTR kubectl exec -i -n openshell $SANDBOX \
   -- tee /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json \
   < /tmp/auth-profiles.json > /dev/null
@@ -248,9 +256,11 @@ their context. It contains agent-specific instructions:
 Both agents are told to use `/sandbox/.openclaw-data/workspace/` for all file
 reads and writes.
 
+Download the `TOOLS.md` file from this repo and copy it into the workspace.
+
 ```bash
 docker exec -i $DOCKER_CTR kubectl exec -i -n openshell $SANDBOX \
-  -- tee /sandbox/.openclaw-data/workspace/TOOLS.md < ~/oclaw/TOOLS.md > /dev/null
+  -- tee /sandbox/.openclaw-data/workspace/TOOLS.md < TOOLS.md > /dev/null
 ```
 
 ## Step 7: Upload test files and verify
@@ -258,7 +268,8 @@ docker exec -i $DOCKER_CTR kubectl exec -i -n openshell $SANDBOX \
 Upload images to the workspace directory (NOT `/sandbox/` root):
 
 ```bash
-openshell sandbox upload $SANDBOX ~/oclaw/frame_000270.jpg /sandbox/.openclaw-data/workspace/
+wget -O doorbell.jpg https://source.roboflow.com/sOfbQhw8a0UEQ11fuaBxY45A0Wf1/0j5TIUPHOFoP4hmUlOzE/original.jpg
+openshell sandbox upload $SANDBOX doorbell.jpg /sandbox/.openclaw-data/workspace/
 ```
 
 From inside the sandbox (or via `openclaw tui`):
@@ -269,7 +280,7 @@ openclaw tui
 
 Then ask:
 
-> Describe the image frame_000270.jpg in the workspace and write the description to image-description.md
+> Describe the image doorbell.jpg in the workspace and write the description to image-description.md
 
 The main agent should call `sessions_spawn` with `agentId: "vision-operator"`
 rather than trying to read the image itself. The vision-operator will analyze
