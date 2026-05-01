@@ -38,6 +38,13 @@ openshell sandbox exec -n "$SANDBOX" -- bash -c \
   "sed -i 's|nvidia/nemotron-3-super-120b-a12b|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning|' \
    /sandbox/.hermes-data/config.yaml"
 
+# Long-video skill can take 5-10 minutes on a 2hr+ recording (audio
+# transcription is multiple pieces). Hermes's default terminal-tool
+# timeout (180s) kills it with exit 124. Bump to 30 min so the skill
+# has room to finish.
+openshell sandbox exec -n "$SANDBOX" -- bash -c \
+  "sed -i 's|^  timeout: 180$|  timeout: 1800|' /sandbox/.hermes-data/config.yaml"
+
 python3 - "$SANDBOX" <<'PY'
 import json, pathlib, sys
 sandbox = sys.argv[1]
