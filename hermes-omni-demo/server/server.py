@@ -314,12 +314,16 @@ async def chat(req: ChatRequest):
     # session with --continue, so the whole browser chat is one continuous
     # Hermes conversation. Client can force a fresh session with new_session.
     hermes_cmd = ["hermes", "chat", "-q", composed, "--yolo"]
+    # Session resumption is OPT-IN: the client must pass an explicit
+    # session_id to continue a prior chat. We never use `--continue` on
+    # behalf of the UI, because that picks up whatever session was most
+    # recently on disk — which can be from a different browser tab, a
+    # different user, or a CLI test. New browser → new Hermes session.
     if req.new_session:
-        pass  # no resume/continue → new session
+        pass  # explicit new session — no --resume/--continue
     elif req.session_id:
         hermes_cmd += ["--resume", req.session_id]
-    else:
-        hermes_cmd += ["--continue"]
+    # else: no session id → start a new session (do NOT auto-continue)
 
     async def generator():
         proc = await asyncio.create_subprocess_exec(

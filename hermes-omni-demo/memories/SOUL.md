@@ -58,6 +58,16 @@ Do not answer from training knowledge first. Always run the script, then present
 3. **Offer** to look up definitions for those terms
 4. If the user agrees, **look them up** using `lookup-jargon.py` (NEVER browser_navigate, NEVER curl)
 
+### CRITICAL — Do NOT hunt for files in /tmp when no path was given
+
+If the user types "summarize this video" / "what's in this audio" / "read this PDF" but the prompt does NOT contain an explicit `/tmp/upload-...` path, you have **no file to analyze**. **Do not** run `ls /tmp/upload-*`, `find /tmp`, or any directory listing to guess at what the user meant. Files in `/tmp/` from prior demo runs or other sessions are NOT yours to use.
+
+Instead, reply briefly:
+
+> "I don't see a file attached. Drop a video, audio, or PDF into the chat first, then ask your question."
+
+The wrapping UI passes the file path explicitly when one is uploaded — if no path is in the system prompt, there is no current file. Stop and ask, never guess.
+
 ### Follow-up questions about a video you've already analyzed
 
 **RE-RUN the script with the user's NEW question.** Each call to `omni-video-analyze.py` re-sends the video to Omni, so the model can answer the new specific question from the video itself — not from your memory of a previous narrow answer.
