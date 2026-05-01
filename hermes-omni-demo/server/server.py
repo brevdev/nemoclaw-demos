@@ -174,9 +174,43 @@ async def upload(file: UploadFile = File(...)):
     is_audio_final = final_path.name.endswith(".mp3") or final_path.name.endswith(".wav")
     size = final_path.stat().st_size
 
-    # Big videos exceed the gateway's ~9 MB inline body cap. Chunk them on
-    # the host so the skill can run its multi-call + synthesis path.
+    # Three video paths, picked by length:
+    #   ≤ 8 MB                              → single Omni call
+    #   8 MB to LONGVIDEO_THRESHOLD_MIN min   → chunk-and-synthesize
+    #   > LONGVIDEO_THRESHOLD_MIN min         → long-video bundle (transcript + frames)
+    # The last path is for genuinely long content (recorded calls, demo days)
+    # where the user is going to ask specific questions, not "summarize."
     VIDEO_INLINE_LIMIT_BYTES = 8 * 1024 * 1024
+    LONGVIDEO_THRESHOLD_MIN = float(os.environ.get("LONGVIDEO_THRESHOLD_MIN", "30"))
+    duration_seconds: float | None = None
+    if not is_audio_final and size > VIDEO_INLINE_LIMIT_BYTES:
+        duration_seconds = await _probe_duration_seconds(final_path)
+
+    if (not is_audio_final
+            and duration_seconds is not None
+            and duration_seconds / 60 >= LONGVIDEO_THRESHOLD_MIN):
+        longvideo_dir = await _prepare_longvideo_bundle(final_path, uid, duration_seconds)
+        sandbox_path = f"/tmp/{longvideo_dir.name}"
+        proc = await asyncio.create_subprocess_exec(
+            "openshell", "sandbox", "upload", SANDBOX, str(longvideo_dir), sandbox_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        _, err = await proc.communicate()
+        if proc.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"sandbox upload failed: {err.decode(errors='ignore')[:500]}",
+            )
+        bundle_size = sum(
+            p.stat().st_size for p in longvideo_dir.rglob("*") if p.is_file()
+        )
+        return UploadResponse(
+            sandbox_path=sandbox_path,
+            size_bytes=bundle_size,
+            original_name=file.filename or longvideo_dir.name,
+            kind="video",
+        )
+
     if not is_audio_final and size > VIDEO_INLINE_LIMIT_BYTES:
         chunks_dir = await _chunk_long_video(final_path, uid)
         sandbox_path = f"/tmp/{chunks_dir.name}"
@@ -217,6 +251,88 @@ async def upload(file: UploadFile = File(...)):
         original_name=file.filename or sandbox_name,
         kind="audio" if is_audio_final else "video",
     )
+
+
+async def _probe_duration_seconds(src: Path) -> float | None:
+    """Return the video duration in seconds via ffprobe, or None on failure."""
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(src),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+    try:
+        return float(out.decode().strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _prepare_longvideo_bundle(src: Path, uid: str, duration: float) -> Path:
+    """Build a long-video analysis bundle: mono 32 kbps audio + 8 evenly-spaced
+    keyframes at 480p + manifest.json. The skill detects this directory shape
+    and runs transcript + frames analysis instead of per-chunk video calls."""
+    bundle = UPLOAD_DIR / f"upload-{uid}-longvideo"
+    frames_dir = bundle / "frames"
+    bundle.mkdir(exist_ok=True)
+    frames_dir.mkdir(exist_ok=True)
+    for old in bundle.glob("*"):
+        if old.is_file():
+            old.unlink()
+    for old in frames_dir.glob("*"):
+        old.unlink()
+
+    audio_path = bundle / "audio.mp3"
+    cmd = [
+        "ffmpeg", "-y", "-i", str(src),
+        "-vn", "-ac", "1", "-ar", "16000",
+        "-c:a", "libmp3lame", "-b:a", "32k",
+        str(audio_path),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, err = await proc.communicate()
+    if proc.returncode != 0:
+        raise HTTPException(
+            500,
+            f"audio extract failed: {err.decode(errors='ignore')[-500:]}",
+        )
+
+    n_frames = 8
+    timestamps = [duration * (i + 0.5) / n_frames for i in range(n_frames)]
+    for i, ts in enumerate(timestamps):
+        out_path = frames_dir / f"frame-{i:02d}-at-{int(ts)}s.jpg"
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-ss", f"{ts:.3f}", "-i", str(src),
+            "-frames:v", "1",
+            "-vf", "scale=854:480",
+            "-q:v", "3",
+            str(out_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+
+    frames = sorted(frames_dir.glob("frame-*.jpg"))
+    manifest = {
+        "source": str(src),
+        "duration": duration,
+        "audio": "audio.mp3",
+        "frames": [
+            {
+                "name": f.name,
+                # Recover the timestamp from the filename so the skill can
+                # cite "[frame at 4:32]" when it answers.
+                "timestamp": float(f.stem.split("-at-")[1].rstrip("s")),
+            }
+            for f in frames
+        ],
+    }
+    (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    return bundle
 
 
 async def _chunk_long_video(src: Path, uid: str) -> Path:

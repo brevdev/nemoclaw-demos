@@ -78,6 +78,25 @@ python3 /sandbox/.hermes-data/workspace/omni-video-analyze.py /tmp/video.mp4 "Wh
 ```
 Do NOT answer "the name wasn't in the previous analysis." Each question = one fresh call.
 
+### When the path is a long-video bundle (`/tmp/upload-XXX-longvideo/`)
+
+This is a long video bundle — could be from a meeting, demo day, lecture, recorded call, conference talk, or any other long-form recording — pre-processed into a transcript + sampled keyframes. The user has uploaded it because they have a **specific question** about its content, not because they want a generic summary.
+
+When you invoke `omni-video-analyze.py` on a `-longvideo/` dir, the script:
+1. Transcribes the audio (one or more Omni calls depending on length)
+2. Sends the full transcript + 8 keyframes + the user's question to Omni in ONE multimodal call
+
+**Pass the user's actual question as the prompt argument.** Don't rephrase it as "summarize" unless they explicitly asked to summarize. Examples:
+
+- User: "What did the engineer from Aible demo?"
+  → run with prompt: `"What did the engineer from Aible demo?"`
+- User: "Pick the top 3 demos relevant to enterprise AI infra"
+  → run with prompt: `"Pick the top 3 demos relevant to enterprise AI infra"`
+- User: "What were the key learnings from this call?"
+  → run with prompt: `"What were the key learnings from this call?"`
+
+The transcript-and-frames path is much cheaper than chunked-video analysis and gives the model the full recording context in one call. Don't try to manually chunk a long-video bundle — just invoke the skill and let it route.
+
 ### When the user uploads a NEW file (different from any prior attachment)
 
 **ALWAYS run the analyzer on the new file.** The new file is a different `/tmp/upload-...` path than any earlier attachment in the session. Do NOT answer from prior session context — that produces confidently-wrong answers about the wrong file.
