@@ -18,6 +18,7 @@ export default function App() {
   const [flowActive, setFlowActive] = useState<FlowNode>("idle");
   const [denyFlash, setDenyFlash] = useState(false);
   const [flowCaption, setFlowCaption] = useState<string | undefined>();
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const chatRef = useRef<ChatHandle>(null);
   const dragDepth = useRef(0);
@@ -70,6 +71,7 @@ export default function App() {
 
   const handleFile = async (file: File) => {
     setUploading(true);
+    setUploadError(null);
     try {
       // Guess kind from MIME or extension for the optimistic UI
       const isPdf =
@@ -86,7 +88,11 @@ export default function App() {
       setVideoPath(result.sandbox_path);
       setMediaKind((result.kind as any) || optimisticKind);
     } catch (e: any) {
-      alert("upload failed: " + (e.message || e));
+      // Surface the actual response body in a toast (auto-dismiss after 8s).
+      // Was an `alert()` previously — UI now shows non-2xx upload errors
+      // inline with full server-side detail so users see what failed.
+      setUploadError(e?.message || String(e));
+      window.setTimeout(() => setUploadError(null), 8000);
     } finally {
       setUploading(false);
     }
@@ -155,6 +161,35 @@ export default function App() {
 
       <PolicyDrawer open={policyOpen} onClose={() => setPolicyOpen(false)} />
       <MemoryDrawer open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+
+      {/* Upload error toast — surfaces non-2xx /api/upload responses */}
+      <AnimatePresence>
+        {uploadError && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed bottom-20 right-6 z-50 max-w-md rounded-xl border border-danger/40 bg-ink-900/95 p-4 shadow-glow backdrop-blur"
+          >
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-danger">
+                <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+                Upload failed
+              </div>
+              <button
+                onClick={() => setUploadError(null)}
+                className="text-ink-300 hover:text-ink-100 text-lg leading-none"
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+            <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-snug text-ink-100">
+              {uploadError}
+            </pre>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Global drag overlay */}
       <AnimatePresence>

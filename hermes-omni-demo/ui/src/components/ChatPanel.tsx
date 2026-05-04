@@ -27,7 +27,7 @@ export type ChatHandle = {
 };
 
 type Message =
-  | { role: "user" | "assistant" | "status" | "tool"; text: string; ts: number }
+  | { role: "user" | "assistant" | "status" | "tool" | "error"; text: string; ts: number }
   | {
       role: "exec";
       cmd: string;
@@ -87,6 +87,11 @@ export const ChatPanel = forwardRef<ChatHandle, Props>(function ChatPanel(
       : VIDEO_PROMPTS;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionIdRef = useRef<string | null>(null);
+  // When the user drops a new file (different path from the last one we
+  // sent against), we force the next /api/chat to start a fresh Hermes
+  // session. Otherwise --continue makes Hermes summarize the prior file.
+  const lastSentVideoPathRef = useRef<string | null>(null);
+  const freshAttachmentRef = useRef<boolean>(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -105,6 +110,11 @@ export const ChatPanel = forwardRef<ChatHandle, Props>(function ChatPanel(
   useImperativeHandle(ref, () => ({
     send: (prompt: string) => send(prompt),
     attach: (src: string, label: string, kind: "video" | "audio" | "document") => {
+      // Mark this as a fresh attachment so the next /api/chat starts a
+      // new Hermes session — otherwise --continue makes the agent
+      // summarize the prior file instead of running the analyzer on
+      // this one (multi-attachment context bleed).
+      freshAttachmentRef.current = true;
       setMessages((m) => [
         ...m,
         { role: "attachment", src, label, kind, ts: Date.now() },
@@ -127,7 +137,13 @@ export const ChatPanel = forwardRef<ChatHandle, Props>(function ChatPanel(
 
   const send = (override?: string) => {
     const prompt = (override ?? input).trim();
-    if (!prompt || loading) return;
+    // Hard-block sending while a file upload is still in flight, so the
+    // server gets the new sandbox_path before the chat call composes its
+    // prompt. Without this, the user can attach a file and hit Enter
+    // before /api/upload completes, the prompt goes out with a stale
+    // (or null) video_path, and Hermes politely answers "no file
+    // attached" — confusing, since the file is visible in the UI.
+    if (!prompt || loading || uploading) return;
     setInput("");
     setLoading(true);
     const ts = Date.now();
@@ -137,6 +153,18 @@ export const ChatPanel = forwardRef<ChatHandle, Props>(function ChatPanel(
       { role: "assistant", text: "", ts },
     ]);
     onEvent?.({ type: "start", prompt });
+
+    // Force a new Hermes session if this turn carries a freshly-dropped
+    // file that wasn't in the prior turn. Stops Hermes from answering
+    // about the OLD file when the user uploads a NEW one mid-session.
+    const isFreshFile =
+      freshAttachmentRef.current ||
+      (videoPath !== null && videoPath !== lastSentVideoPathRef.current);
+    freshAttachmentRef.current = false;
+    if (isFreshFile) {
+      sessionIdRef.current = null;
+    }
+    lastSentVideoPathRef.current = videoPath;
 
     disposerRef.current = streamChat(
       prompt,
@@ -195,10 +223,20 @@ export const ChatPanel = forwardRef<ChatHandle, Props>(function ChatPanel(
           return [...m, { role: "status", text: e.text, ts: Date.now() }];
         });
       } else if (e.type === "error") {
-        setMessages((m) => [
-          ...m,
-          { role: "status", text: `error · ${e.error}`, ts: Date.now() },
-        ]);
+        // Prominent error card — preserves multi-line output from the
+        // backend (e.g. last 20 lines of hermes stdout when the run
+        // produced no visible answer).
+        setMessages((m) => {
+          // Drop any trailing empty assistant placeholder so the error
+          // doesn't appear below a "Thinking…" ghost row.
+          const trimmed =
+            m.length &&
+            m[m.length - 1].role === "assistant" &&
+            !m[m.length - 1].text?.trim()
+              ? m.slice(0, -1)
+              : m;
+          return [...trimmed, { role: "error", text: e.error, ts: Date.now() }];
+        });
         setLoading(false);
       } else if (e.type === "done") {
         setMessages((m) => {
@@ -212,6 +250,7 @@ export const ChatPanel = forwardRef<ChatHandle, Props>(function ChatPanel(
       }
     },
     sessionIdRef.current,
+    isFreshFile, // new_session: true forces /api/chat to drop --continue
     );
   };
 
@@ -300,8 +339,12 @@ export const ChatPanel = forwardRef<ChatHandle, Props>(function ChatPanel(
                 send();
               }
             }}
-            placeholder="Ask about a video, audio, or PDF — drag one in"
-            disabled={loading}
+            placeholder={
+              uploading
+                ? "Uploading… hold on a sec"
+                : "Ask about a video, audio, or PDF — drag one in"
+            }
+            disabled={loading || uploading}
           />
           {onVoice && (
             <AudioRecorder onTranscribed={onVoice} disabled={uploading} />
@@ -425,6 +468,23 @@ function MessageRow({
       >
         <span className="h-1 w-1 rounded-full bg-ink-400" />
         {msg.text}
+      </motion.div>
+    );
+  }
+  if (msg.role === "error") {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-xl border border-danger/40 bg-danger/5 p-4 text-[13px]"
+      >
+        <div className="mb-2 flex items-center gap-2 text-danger">
+          <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+          <span className="font-semibold">Error</span>
+        </div>
+        <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-snug text-ink-100">
+          {msg.text}
+        </pre>
       </motion.div>
     );
   }
