@@ -299,7 +299,9 @@ openshell sandbox upload $SANDBOX memories/SOUL.md /sandbox/.hermes-data/
 Verify the skills:
 
 ```bash
-openshell sandbox exec -n $SANDBOX -- hermes skills list
+# Rich tables need a non-trivial width; bare `openshell sandbox exec` can report COLUMNS=1
+# and print one character per line. Force a width (and height) for readable output.
+openshell sandbox exec -n $SANDBOX -- env COLUMNS=120 LINES=40 hermes skills list
 ```
 
 Expected:
@@ -526,7 +528,7 @@ Drop a new directory under `skills/` with its own `SKILL.md`, then:
 
 ```bash
 nemoclaw $SANDBOX skill install skills/your-new-skill
-openshell sandbox exec -n $SANDBOX -- hermes skills list
+openshell sandbox exec -n $SANDBOX -- env COLUMNS=120 LINES=40 hermes skills list
 ```
 
 Restart `hermes chat` (or refresh the web UI) so Hermes picks up the new skill.
@@ -574,6 +576,7 @@ SANDBOX=my-hermes bash scripts/setup.sh
 
 | Symptom | Cause and fix |
 |---|---|
+| `hermes skills list` prints one letter per line (unreadable table) | Hermes uses Rich; `openshell sandbox exec` often exposes width 1. Run: `openshell sandbox exec -n $SANDBOX -- env COLUMNS=120 LINES=40 hermes skills list`. Or run `hermes skills list` after `nemoclaw $SANDBOX connect` in a normal shell. |
 | UI shows "Hermes produced no visible answer (exit 0)" | Run the skill directly to see the real error: `openshell sandbox exec -n my-hermes -- python3 /sandbox/.hermes-data/workspace/omni-video-analyze.py /tmp/<latest-upload> "test"` (find the upload with `openshell sandbox exec -n my-hermes -- ls -lt /tmp \| head -5`). The error message in the UI now includes the last 20 lines of Hermes output, which will tell you whether it's a payload-size, model-routing, or token-budget issue. |
 | UI shows "Hermes produced no visible answer (exit 1)" with no detail | Hermes itself crashed. Check that `/sandbox/.hermes/SOUL.md` exists and is readable (it's a symlink to `/sandbox/.hermes-data/memories/SOUL.md` in current sandbox images). Re-run `bash scripts/setup.sh` — its final step verifies SOUL is visible to Hermes. |
 | TUI banner / `nemoclaw list` shows Super 120B even after the swap | Display labels weren't updated. Re-run the two `sed`/`python3` commands in Part 3. The gateway route is correct; only the labels lie. |

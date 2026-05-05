@@ -32,18 +32,28 @@ if ! nemoclaw "$SANDBOX" status >/dev/null 2>&1; then
     exit 1
 fi
 
+# Hermes config/state: current NemoClaw images use /sandbox/.hermes; older
+# images used /sandbox/.hermes-data (see NemoClaw agents/hermes/manifest.yaml).
+# One line: openshell rejects newlines inside exec command arguments (gRPC).
+HERMES_STATE=$(openshell sandbox exec -n "$SANDBOX" -- bash -c \
+  'if [ -f /sandbox/.hermes/config.yaml ]; then echo /sandbox/.hermes; elif [ -f /sandbox/.hermes-data/config.yaml ]; then echo /sandbox/.hermes-data; else echo MISSING; fi' \
+  | tr -d '\r\n[:space:]')
+if [[ "$HERMES_STATE" == "MISSING" ]]; then
+    echo "✗ Hermes config.yaml not found under /sandbox/.hermes or /sandbox/.hermes-data." >&2
+    exit 1
+fi
+
 # ── 1. fix the two display labels (gateway route is set separately) ──
 echo "[1/5] fixing display labels"
 openshell sandbox exec -n "$SANDBOX" -- bash -c \
-  "sed -i 's|nvidia/nemotron-3-super-120b-a12b|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning|' \
-   /sandbox/.hermes-data/config.yaml"
+  "sed -i 's|nvidia/nemotron-3-super-120b-a12b|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning|' ${HERMES_STATE}/config.yaml"
 
 # Long-video skill can take 5-10 minutes on a 2hr+ recording (audio
 # transcription is multiple pieces). Hermes's default terminal-tool
 # timeout (180s) kills it with exit 124. Bump to 30 min so the skill
 # has room to finish.
 openshell sandbox exec -n "$SANDBOX" -- bash -c \
-  "sed -i 's|^  timeout: 180$|  timeout: 1800|' /sandbox/.hermes-data/config.yaml"
+  "sed -i 's|^  timeout: 180$|  timeout: 1800|' ${HERMES_STATE}/config.yaml"
 
 python3 - "$SANDBOX" <<'PY'
 import json, pathlib, sys
@@ -81,28 +91,26 @@ nemoclaw "$SANDBOX" skill install "$HERE/skills/jargon-lookup"
 # ── 4. upload scripts ──
 echo "[4/5] uploading scripts"
 openshell sandbox upload "$SANDBOX" "$HERE/scripts/omni-video-analyze.py" \
-  /sandbox/.hermes-data/workspace/
+  "${HERMES_STATE}/workspace/"
 openshell sandbox upload "$SANDBOX" "$HERE/scripts/lookup-jargon.py" \
-  /sandbox/.hermes-data/workspace/
+  "${HERMES_STATE}/workspace/"
 openshell sandbox exec -n "$SANDBOX" -- chmod +x \
-  /sandbox/.hermes-data/workspace/omni-video-analyze.py \
-  /sandbox/.hermes-data/workspace/lookup-jargon.py
+  "${HERMES_STATE}/workspace/omni-video-analyze.py" \
+  "${HERMES_STATE}/workspace/lookup-jargon.py"
 
 # ── 5. upload SOUL.md to both locations ──
-# /sandbox/.hermes/SOUL.md is a symlink to /sandbox/.hermes-data/memories/SOUL.md
-# in the current sandbox image, so the memories/ path is the canonical one.
-# We also drop a copy at /sandbox/.hermes-data/SOUL.md as a belt-and-braces
-# safeguard against future restructure of the symlink.
+# Canonical copy under memories/; also at Hermes home root where some images
+# keep SOUL.md for the agent entrypoint.
 echo "[5/5] uploading SOUL.md"
 openshell sandbox upload "$SANDBOX" "$HERE/memories/SOUL.md" \
-  /sandbox/.hermes-data/memories/
+  "${HERMES_STATE}/memories/"
 openshell sandbox upload "$SANDBOX" "$HERE/memories/SOUL.md" \
-  /sandbox/.hermes-data/
+  "${HERMES_STATE}/"
 
 # ── 6. verify the SOUL.md is readable through the path Hermes uses ──
 expected=$(wc -c < "$HERE/memories/SOUL.md")
 actual=$(openshell sandbox exec -n "$SANDBOX" -- bash -c \
-    'wc -c < /sandbox/.hermes/SOUL.md 2>/dev/null || wc -c < /sandbox/.hermes-data/SOUL.md' \
+    "wc -c </sandbox/.hermes/SOUL.md 2>/dev/null || wc -c <${HERMES_STATE}/SOUL.md 2>/dev/null || wc -c <${HERMES_STATE}/memories/SOUL.md" \
     | tr -d '[:space:]')
 if [[ "$actual" != "$expected" ]]; then
     echo "✗ SOUL.md verification failed: expected $expected bytes, got $actual" >&2

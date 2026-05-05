@@ -31,7 +31,32 @@ Usage:
 import sys, json, base64, urllib.request, os, subprocess, re, argparse, struct
 
 API_URL = "https://inference.local/v1/chat/completions"
-MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+# Override with OMNI_MODEL=... if you switch the gateway to another checkpoint.
+MODEL = os.environ.get(
+    "OMNI_MODEL",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+)
+
+# This checkpoint is a *reasoning* model: the API can return chain-of-thought
+# in `reasoning_content`. For multimodal Q&A, NVIDIA recommends
+# `enable_thinking: false` plus instruct-style sampling (low temperature,
+# top_k=1) — otherwise completions often collapse into repetitive tokens.
+_DEFAULT_CHAT_TEMPLATE_KWARGS = {"enable_thinking": False}
+
+
+def _no_think_prompt(prompt: str) -> str:
+    """Append Nemotron's in-prompt thinking toggle (HF chat_template_jinja).
+
+    The Omni tokenizer template scans each user *text* part for `/no_think`
+    and turns off the VLM reasoning path. This still works if an API proxy
+    strips top-level `chat_template_kwargs` (see model card on Hugging Face).
+    The directive is stripped again before tokenization.
+    """
+    p = (prompt or "").rstrip()
+    if not p or "/no_think" in p:
+        return p
+    return f"{p}\n/no_think"
+
 
 AUDIO_EXTS = {"mp3", "wav", "m4a", "aac", "ogg", "flac"}
 IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}
@@ -160,11 +185,14 @@ def _load_chunks_manifest(chunk_dir: str) -> list:
 
 
 def _build_content_blocks(path: str, prompt: str) -> list:
-    """Build messages[0].content for non-chunked inputs."""
-    blocks = [{"type": "text", "text": prompt}]
+    """Build messages[0].content for non-chunked inputs.
 
+    Order follows NVIDIA Omni cookbooks: video_url / input_audio *before* the
+    question text for video and audio; image examples keep text then image.
+    """
     if os.path.isdir(path):
-        # PDF-pages dir (images only)
+        # PDF-pages dir (images only) — instructions first, then pages.
+        blocks: list = [{"type": "text", "text": prompt}]
         pages = sorted(
             os.path.join(path, f)
             for f in os.listdir(path)
@@ -185,27 +213,42 @@ def _build_content_blocks(path: str, prompt: str) -> list:
         data_b64 = base64.b64encode(f.read()).decode()
 
     if ext in AUDIO_EXTS:
-        blocks.append({
-            "type": "input_audio",
-            "input_audio": {
-                "data": data_b64,
-                "format": "mp3" if ext == "mp3" else "wav",
+        return [
+            {
+                "type": "input_audio",
+                "input_audio": {
+                    "data": data_b64,
+                    "format": "mp3" if ext == "mp3" else "wav",
+                },
             },
-        })
-    elif ext in IMAGE_EXTS:
-        blocks.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/{ext};base64,{data_b64}"},
-        })
-    else:
-        blocks.append({
+            {"type": "text", "text": prompt},
+        ]
+    if ext in IMAGE_EXTS:
+        return [
+            {"type": "text", "text": prompt},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/{ext};base64,{data_b64}"},
+            },
+        ]
+    # video — match NVIDIA video example: clip first, question second
+    return [
+        {
             "type": "video_url",
             "video_url": {"url": f"data:video/{ext};base64,{data_b64}"},
-        })
-    return blocks
+        },
+        {"type": "text", "text": prompt},
+    ]
 
 
 def _post(payload: dict) -> dict:
+    payload = {**payload}
+    # Merge so callers can extend chat_template_kwargs without dropping defaults.
+    ct = {**dict(_DEFAULT_CHAT_TEMPLATE_KWARGS), **payload.get("chat_template_kwargs", {})}
+    payload["chat_template_kwargs"] = ct
+    # Instruct-style defaults reduce runaway repetition vs server defaults.
+    payload.setdefault("temperature", 0.2)
+    payload.setdefault("top_k", 1)
     raw = json.dumps(payload).encode()
     size_kb = len(raw) // 1024
     # Retry on transient 5xx and SSL/connection errors. The NVIDIA-hosted
@@ -251,6 +294,7 @@ def _post(payload: dict) -> dict:
 
 
 def call_omni(path: str, prompt: str, max_tokens: int = 2048) -> dict:
+    prompt = _no_think_prompt(prompt)
     content = _build_content_blocks(path, prompt)
     payload = {
         "model": MODEL,
@@ -273,6 +317,7 @@ def call_omni(path: str, prompt: str, max_tokens: int = 2048) -> dict:
 
 def call_omni_text(prompt: str, max_tokens: int = 2048) -> dict:
     """Text-only Omni call (used by the synthesis pass)."""
+    prompt = _no_think_prompt(prompt)
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
@@ -309,7 +354,7 @@ def analyze_single(video_path: str, prompt: str = None):
     print("\nSending to Nemotron 3 Nano Omni...")
     result = call_omni(video_path, prompt, max_tokens=4096)
 
-    if result["reasoning"]:
+    if result["reasoning"] and result["reasoning"] != result["content"]:
         print("\n--- Omni Reasoning ---")
         print(result["reasoning"])
     print("\n--- Omni Analysis ---")
@@ -449,7 +494,7 @@ def analyze_image_dir_batched(pages_dir: str, prompt: str = None):
             f"final conclusions for the synthesis step."
         )
 
-        content = [{"type": "text", "text": batch_prompt}]
+        content = [{"type": "text", "text": _no_think_prompt(batch_prompt)}]
         for p in batch_pages:
             with open(p, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode()
@@ -534,7 +579,7 @@ def _transcribe_audio(audio_path: str) -> str:
             "messages": [{
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": transcribe_prompt},
+                    {"type": "text", "text": _no_think_prompt(transcribe_prompt)},
                     {"type": "input_audio",
                      "input_audio": {"data": audio_b64, "format": "mp3"}},
                 ],
@@ -569,8 +614,10 @@ def _transcribe_audio(audio_path: str) -> str:
                     "role": "user",
                     "content": [
                         {"type": "text",
-                         "text": (transcribe_prompt
-                                  + f"\n\n(This is part {i + 1} of {len(pieces)}.)")},
+                         "text": _no_think_prompt(
+                             transcribe_prompt
+                             + f"\n\n(This is part {i + 1} of {len(pieces)}.)"
+                         )},
                         {"type": "input_audio",
                          "input_audio": {"data": b64, "format": "mp3"}},
                     ],
@@ -642,7 +689,7 @@ def analyze_longvideo(longvideo_dir: str, prompt: str = None):
         })
     content.append({
         "type": "text",
-        "text": (
+        "text": _no_think_prompt(
             f"\n=== USER QUESTION ===\n{prompt}\n\n"
             f"Answer the user's question using BOTH the transcript and the visual "
             f"context from the screenshots. Cite timestamps when useful. Be specific "
