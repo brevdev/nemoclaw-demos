@@ -145,14 +145,14 @@ async def upload(file: UploadFile = File(...)):
             out_name = f"upload-{uid}.mp3"
             out_path = UPLOAD_DIR / out_name
             cmd = [
-                "ffmpeg", "-y", "-i", str(raw_path),
+                "ffmpeg", "-nostdin", "-y", "-i", str(raw_path),
                 "-vn",
                 "-c:a", "libmp3lame", "-q:a", "4",
                 str(out_path),
             ]
         else:
             cmd = [
-                "ffmpeg", "-y", "-i", str(raw_path),
+                "ffmpeg", "-nostdin", "-y", "-i", str(raw_path),
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
                 "-c:a", "aac", "-b:a", "96k",
                 "-f", "mp4", "-movflags", "+faststart",
@@ -284,7 +284,7 @@ async def _prepare_longvideo_bundle(src: Path, uid: str, duration: float) -> Pat
 
     audio_path = bundle / "audio.mp3"
     cmd = [
-        "ffmpeg", "-y", "-i", str(src),
+        "ffmpeg", "-nostdin", "-y", "-i", str(src),
         "-vn", "-ac", "1", "-ar", "16000",
         "-c:a", "libmp3lame", "-b:a", "32k",
         str(audio_path),
@@ -306,7 +306,7 @@ async def _prepare_longvideo_bundle(src: Path, uid: str, duration: float) -> Pat
     for i, ts in enumerate(timestamps):
         out_path = frames_dir / f"frame-{i:02d}-at-{int(ts)}s.jpg"
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-ss", f"{ts:.3f}", "-i", str(src),
+            "ffmpeg", "-nostdin", "-y", "-ss", f"{ts:.3f}", "-i", str(src),
             "-frames:v", "1",
             "-vf", "scale=854:480",
             "-q:v", "3",
@@ -346,7 +346,7 @@ async def _chunk_long_video(src: Path, uid: str) -> Path:
         old.unlink()
 
     cmd = [
-        "ffmpeg", "-y", "-i", str(src),
+        "ffmpeg", "-nostdin", "-y", "-i", str(src),
         "-vf", "scale=854:480,fps=24",
         "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
         "-force_key_frames", "expr:gte(t,n_forced*120)",
@@ -412,8 +412,10 @@ def _compose_prompt(prompt: str, video_path: str | None) -> str:
     user = " ".join(prompt.split())
     if video_path:
         return (
-            f"The user uploaded a video at {video_path}. "
-            f"Use the video-analyze skill via the terminal tool to inspect it, then answer. "
+            f"The user uploaded a file at this explicit sandbox path: {video_path}. "
+            f"This path is the current attachment; do not use the missing-file fallback. "
+            f"Use the video-analyze skill via the terminal tool to inspect exactly this path. "
+            f"After the terminal tool returns, answer from its Omni Analysis output. "
             f"If they ask to look something up on Wikipedia, use the jargon-lookup skill. "
             f"Never use browser_navigate or execute_code. "
             f"User question: {user}"
@@ -820,7 +822,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
     # Always transcode to mp3 for input_audio routing
     out_path = UPLOAD_DIR / f"voice-{uid}.mp3"
     tr = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-y", "-i", str(raw_path),
+        "ffmpeg", "-nostdin", "-y", "-i", str(raw_path),
         "-vn", "-c:a", "libmp3lame", "-q:a", "4",
         str(out_path),
         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
