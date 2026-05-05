@@ -5,14 +5,30 @@ Omni reasoning model as a vision-capable sub-agent. The main agent (Nemotron
 Super 120B, text-only) delegates image tasks to a `vision-operator` sub-agent
 running the Omni model (text + image).
 
+## Tested configuration
+
+This recipe was last validated on 2026-05-05 with:
+
+- Host: macOS arm64 on Apple Silicon with Docker Desktop
+- NemoClaw CLI: `nemoclaw v0.0.34`
+- OpenShell CLI and cluster image: `openshell 0.0.36`, `ghcr.io/nvidia/openshell/cluster:0.0.36`
+- In-sandbox OpenClaw: `2026.4.24 (cbcfdf6)`
+- Inference: hosted NVIDIA Endpoints, so no local GPU is required
+
+Older `nemoclaw v0.0.24` failed against the current OpenClaw build during
+onboarding with a Dockerfile patch error for
+`writeConfigFile(params.nextConfig)`. If you hit that, update NemoClaw and
+re-run onboarding rather than debugging the demo steps.
+
 ## What's in this directory
 
 | File | Purpose |
 |------|---------|
 | `openclaw.json` | Reference config with Omni provider + agents list (for comparison) |
+| `AGENTS.md` | Workspace instructions that make the main agent delegate visual tasks |
 | `TOOLS.md` | Workspace file that teaches the main agent to delegate image tasks |
 | `policy.yaml` | Patched OpenShell network policy (with `node` in nvidia binaries) |
-| `scripts/apply-omni-subagent.sh` | Repeatable helper that patches policy, `openclaw.json`, auth profiles, and `TOOLS.md` |
+| `scripts/apply-omni-subagent.sh` | Repeatable helper that patches policy, `openclaw.json`, auth profiles, `AGENTS.md`, and `TOOLS.md` |
 | `scripts/fix-spark-gateway.sh` | Recovery helper for DGX Spark/restricted netns gateway crashes |
 
 ## Known-good model IDs
@@ -42,6 +58,9 @@ nemoclaw --version
 openshell --version
 ```
 
+Use `nemoclaw v0.0.34` or newer for this recipe. If your installed CLI is older,
+rerun the installer before onboarding a fresh sandbox.
+
 ## Step 2: Onboard an OpenClaw sandbox
 
 ```bash
@@ -67,7 +86,38 @@ NVIDIA_API_KEY="$NVIDIA_API_KEY" \
 nemoclaw onboard --fresh --non-interactive --yes-i-accept-third-party-software
 ```
 
-Wait for the build + image upload to finish. Save the tokenized URL it prints.
+Wait for the build + image upload to finish. Note the dashboard URL and token
+command it prints.
+
+If Docker Desktop is running but NemoClaw reports a stale Colima socket, point
+NemoClaw at Docker Desktop explicitly before onboarding:
+
+```bash
+export DOCKER_HOST=unix://"$HOME"/.docker/run/docker.sock
+docker info >/dev/null
+nemoclaw onboard
+```
+
+Current NemoClaw prints the OpenClaw dashboard URL separately from the auth
+token. Port `18789` must be forwarded before opening `http://127.0.0.1:18789/`.
+If the local URL is not reachable, restart the gateway and dashboard
+port-forward:
+
+```bash
+nemoclaw hclaw recover
+```
+
+Fetch the token with:
+
+```bash
+nemoclaw hclaw gateway-token --quiet
+```
+
+Replace `hclaw` with your sandbox name in both commands.
+
+If the browser asks for auth, append `#token=<token>` to the local dashboard
+URL. Use the dashboard for a visual control surface; use the OpenClaw CLI/TUI
+commands below for repeatable validation.
 
 ## Step 3: Set variables
 
@@ -107,11 +157,15 @@ under `/tmp` with `UNDO.txt` instructions. It:
 2. Patches `/sandbox/.openclaw/openclaw.json` to add:
    - provider `nvidia-omni` pointing at `https://integrate.api.nvidia.com/v1`
    - `main` + `vision-operator` entries in `agents.list`
+   - the vision operator workspace at `/sandbox/.openclaw-data/workspace`
    - sub-agent limits and a longer timeout
    - `plugins.entries.bonjour.enabled=false` because mDNS discovery is not
      required for this demo and can fail inside restricted network namespaces
 3. Recomputes `/sandbox/.openclaw/.config-hash`.
-4. Writes the current OpenClaw auth profile format for the vision operator:
+4. Creates and fixes ownership on the shared workspace, the vision operator
+   session directory, and both observed vision-operator agent directories.
+5. Writes the current OpenClaw auth profile format for the vision operator in
+   both observed agent config paths:
 
    ```json
    {
@@ -130,8 +184,8 @@ under `/tmp` with `UNDO.txt` instructions. It:
    }
    ```
 
-5. Copies `TOOLS.md` into the workspace.
-6. Creates `/sandbox/.openclaw/tasks -> /sandbox/.openclaw-data/tasks` for
+6. Copies `AGENTS.md` and `TOOLS.md` into the workspace.
+7. Creates `/sandbox/.openclaw/tasks -> /sandbox/.openclaw-data/tasks` for
    OpenClaw builds that expect a writable task-registry path.
 
 Verify the config:
@@ -149,6 +203,32 @@ Agents:
 - vision-operator
   Model: nvidia-omni/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
 ```
+
+Then verify the hot-reloaded config and filesystem paths directly:
+
+```bash
+docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- bash -lc '
+python3 - <<PY
+import json
+import os
+cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
+agents = {agent["id"]: agent for agent in cfg["agents"]["list"]}
+assert "nvidia-omni" in cfg["models"]["providers"]
+assert agents["vision-operator"]["workspace"] == "/sandbox/.openclaw-data/workspace"
+assert cfg["agents"]["defaults"]["timeoutSeconds"] >= 300
+for path in [
+    "/sandbox/.openclaw-data/workspace/AGENTS.md",
+    "/sandbox/.openclaw-data/workspace/TOOLS.md",
+    "/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json",
+    "/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json",
+]:
+    assert os.path.exists(path), path
+print("omni demo config ok")
+PY'
+```
+
+`kubectl exec` may print `Defaulted container "agent"` on stderr. That is normal
+Kubernetes noise for this pod and is not an error by itself.
 
 ## Step 5: Ensure the OpenClaw gateway is reachable
 
@@ -240,8 +320,8 @@ the file appears:
 
 ```bash
 for _ in $(seq 1 60); do
-  if openshell sandbox exec -n "$SANDBOX" --       test -s /sandbox/.openclaw-data/workspace/image-description.md; then
-    openshell sandbox exec -n "$SANDBOX" --       cat /sandbox/.openclaw-data/workspace/image-description.md
+  if openshell sandbox exec -n "$SANDBOX" -- test -s /sandbox/.openclaw-data/workspace/image-description.md; then
+    openshell sandbox exec -n "$SANDBOX" -- cat /sandbox/.openclaw-data/workspace/image-description.md
     break
   fi
   sleep 1
@@ -261,6 +341,49 @@ openshell sandbox exec -n "$SANDBOX" -- bash -lc \
 
 ## Troubleshooting
 
+### Docker works, but NemoClaw reports a Colima socket
+
+If `docker info` succeeds but `nemoclaw debug --quick` points at
+`~/.colima/default/docker.sock`, export the active Docker Desktop socket before
+running `nemoclaw onboard`:
+
+```bash
+export DOCKER_HOST=unix://"$HOME"/.docker/run/docker.sock
+```
+
+### Onboarding fails while patching OpenClaw during the Docker build
+
+If the build fails around `writeConfigFile(params.nextConfig)`, your NemoClaw
+CLI is too old for the current OpenClaw base image. Update NemoClaw, confirm
+`nemoclaw --version` is at least the tested version above, and onboard a fresh
+sandbox.
+
+### `EACCES` creating vision-operator sessions or workspace
+
+Use the current helper. It creates and `chown`s the shared workspace plus both
+observed vision-operator agent/session directories before writing config files.
+For a sandbox patched with an older helper, recover with:
+
+```bash
+docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- bash -lc '
+mkdir -p \
+  /sandbox/.openclaw-data/workspace \
+  /sandbox/.openclaw-data/agents/vision-operator/agent \
+  /sandbox/.openclaw-data/agents/vision-operator/sessions \
+  /sandbox/.openclaw/agents/vision-operator/agent \
+  /sandbox/.openclaw/agents/vision-operator/sessions &&
+chown -R sandbox:sandbox \
+  /sandbox/.openclaw-data/workspace \
+  /sandbox/.openclaw-data/agents/vision-operator \
+  /sandbox/.openclaw/agents/vision-operator'
+```
+
+### Config invalid: `Unrecognized key: "systemPrompt"`
+
+OpenClaw `2026.4.24` does not accept `agents.list[].systemPrompt`. Keep core
+demo instructions in workspace files instead; the helper copies `AGENTS.md` and
+`TOOLS.md` into `/sandbox/.openclaw-data/workspace/`.
+
 ### `401 status code` from `nvidia-omni`
 
 Usually one of:
@@ -270,11 +393,21 @@ Usually one of:
   `version` + `profiles` + `key` shape
 - provider/model names do not line up (`nvidia-omni/<model-id>` in the agent,
   provider key `nvidia-omni` in `models.providers`)
+- auth profile was written only to the legacy data path while this OpenClaw
+  build uses `/sandbox/.openclaw/agents/vision-operator/agent`
 
 Re-run:
 
 ```bash
 NVIDIA_API_KEY=nvapi-... bash scripts/apply-omni-subagent.sh
+```
+
+Then check both auth-profile paths exist:
+
+```bash
+docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- bash -lc '
+test -s /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
+test -s /sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json'
 ```
 
 ### `LLM request timed out.` / `Connection error.`
@@ -286,6 +419,14 @@ openshell policy get "$SANDBOX" --full | sed -n '/^  nvidia:/,/^  [a-z]/p'
 ```
 
 Re-run the helper if `node` is missing.
+
+If the CLI keeps printing `Waiting for agent reply...` and then times out, check
+the gateway log for the real provider error:
+
+```bash
+openshell sandbox exec -n "$SANDBOX" -- bash -lc \
+  'tail -n 160 /tmp/openclaw-*/openclaw-*.log | grep -E "401 status|nvidia-omni|FailoverError|stuck session" || true'
+```
 
 ### `gateway closed (1006)` or `uv_interface_addresses`
 

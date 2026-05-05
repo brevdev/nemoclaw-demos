@@ -15,6 +15,9 @@ OMNI_MODEL="${OMNI_MODEL:-nvidia/nemotron-3-nano-omni-30b-a3b-reasoning}"
 SUPER_MODEL="${SUPER_MODEL:-nvidia/nemotron-3-super-120b-a12b}"
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 BACKUP_DIR="${BACKUP_DIR:-$(mktemp -d "/tmp/${SANDBOX}-openclaw-omni.XXXXXX")}"
+DATA_WORKSPACE="/sandbox/.openclaw-data/workspace"
+DATA_AGENT_DIR="/sandbox/.openclaw-data/agents/vision-operator"
+ACTIVE_AGENT_DIR="/sandbox/.openclaw/agents/vision-operator"
 
 log() { printf '→ %s\n' "$*"; }
 need() {
@@ -146,7 +149,22 @@ kexec chmod 644 /sandbox/.openclaw/openclaw.json /sandbox/.openclaw/.config-hash
 cat "$BACKUP_DIR/openclaw-updated.json" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw/openclaw.json >/dev/null
 kexec /bin/bash -c 'cd /sandbox/.openclaw && sha256sum openclaw.json > .config-hash && chmod 444 openclaw.json .config-hash'
 
-# 3. Write the per-agent auth profile in the OpenClaw 2026.4 auth-profile format.
+# 3. Provision the shared workspace and both observed agent data paths. Current
+# OpenClaw reports ~/.openclaw/agents/vision-operator/agent as the active agent
+# dir, while older cookbook notes used ~/.openclaw-data/agents.
+log "ensuring demo workspace and vision-operator agent dirs"
+kexec bash -c "mkdir -p \
+  '$DATA_WORKSPACE' \
+  '$DATA_AGENT_DIR/agent' \
+  '$DATA_AGENT_DIR/sessions' \
+  '$ACTIVE_AGENT_DIR/agent' \
+  '$ACTIVE_AGENT_DIR/sessions' && \
+  chown -R sandbox:sandbox \
+  '$DATA_WORKSPACE' \
+  '$DATA_AGENT_DIR' \
+  '$ACTIVE_AGENT_DIR'"
+
+# 4. Write the per-agent auth profile in the OpenClaw 2026.4 auth-profile format.
 log "writing vision-operator auth profile"
 auth_profile=$(python3 - <<'PY'
 import json
@@ -166,22 +184,23 @@ print(json.dumps({
 }, indent=2))
 PY
 )
-kexec bash -c 'mkdir -p /sandbox/.openclaw-data/agents/vision-operator/agent && chown -R sandbox:sandbox /sandbox/.openclaw-data/agents/vision-operator'
-printf '%s\n' "$auth_profile" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json >/dev/null
-kexec chmod 600 /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
-kexec chown sandbox:sandbox /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
+printf '%s\n' "$auth_profile" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_AGENT_DIR/agent/auth-profiles.json" >/dev/null
+printf '%s\n' "$auth_profile" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$ACTIVE_AGENT_DIR/agent/auth-profiles.json" >/dev/null
+kexec chmod 600 "$DATA_AGENT_DIR/agent/auth-profiles.json" "$ACTIVE_AGENT_DIR/agent/auth-profiles.json"
+kexec chown sandbox:sandbox "$DATA_AGENT_DIR/agent/auth-profiles.json" "$ACTIVE_AGENT_DIR/agent/auth-profiles.json"
 
-# 4. Copy demo instructions into the shared workspace.
-log "copying TOOLS.md into workspace"
-cat "$HERE/TOOLS.md" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/workspace/TOOLS.md >/dev/null
+# 5. Copy demo instructions into the shared workspace.
+log "copying AGENTS.md and TOOLS.md into workspace"
+cat "$HERE/AGENTS.md" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/AGENTS.md" >/dev/null
+cat "$HERE/TOOLS.md" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/TOOLS.md" >/dev/null
 
-# 5. Optional: seed identity so scripted smoke tests do not get intercepted by BOOTSTRAP.md.
+# 6. Optional: seed identity so scripted smoke tests do not get intercepted by BOOTSTRAP.md.
 if [[ "${SEED_DEMO_IDENTITY:-0}" == "1" ]]; then
     log "seeding demo identity and moving BOOTSTRAP.md aside"
-    kexec bash -c 'cd /sandbox/.openclaw-data/workspace && tar cf /tmp/openclaw-demo-identity-before.tar BOOTSTRAP.md IDENTITY.md USER.md SOUL.md 2>/dev/null || true'
+    kexec bash -c "cd '$DATA_WORKSPACE' && tar cf /tmp/openclaw-demo-identity-before.tar BOOTSTRAP.md IDENTITY.md USER.md SOUL.md 2>/dev/null || true"
     kexec cat /tmp/openclaw-demo-identity-before.tar > "$BACKUP_DIR/openclaw-demo-identity-before.tar" 2>/dev/null || true
-    kexec bash -c 'cd /sandbox/.openclaw-data/workspace && [ ! -f BOOTSTRAP.md ] || mv BOOTSTRAP.md BOOTSTRAP.md.disabled-for-omni-demo'
-    cat <<'IDENTITY' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/workspace/IDENTITY.md >/dev/null
+    kexec bash -c "cd '$DATA_WORKSPACE' && [ ! -f BOOTSTRAP.md ] || mv BOOTSTRAP.md BOOTSTRAP.md.disabled-for-omni-demo"
+    cat <<'IDENTITY' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/IDENTITY.md" >/dev/null
 # IDENTITY.md - Who Am I?
 
 - **Name:** Claw Demo
@@ -191,7 +210,7 @@ if [[ "${SEED_DEMO_IDENTITY:-0}" == "1" ]]; then
 
 This identity was pre-seeded for the NemoClaw Omni vision sub-agent demo.
 IDENTITY
-    cat <<'USER' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/workspace/USER.md >/dev/null
+    cat <<'USER' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/USER.md" >/dev/null
 # USER.md - Human Context
 
 - **Name:** Demo operator
@@ -199,7 +218,7 @@ IDENTITY
 USER
 fi
 
-# 6. Make the task registry path writable when the current OpenClaw build expects it.
+# 7. Make the task registry path writable when the current OpenClaw build expects it.
 log "ensuring writable task registry path"
 kexec bash -c 'mkdir -p /sandbox/.openclaw-data/tasks && chown -R sandbox:sandbox /sandbox/.openclaw-data/tasks && rm -rf /sandbox/.openclaw/tasks && ln -s /sandbox/.openclaw-data/tasks /sandbox/.openclaw/tasks'
 
@@ -211,8 +230,11 @@ cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
 print("providers:", ", ".join(cfg["models"]["providers"].keys()))
 print("agents:", ", ".join(agent["id"] for agent in cfg["agents"]["list"]))
 print("vision model:", cfg["agents"]["list"][1]["model"]["primary"])
+print("vision workspace:", cfg["agents"]["list"][1]["workspace"])
+print("agents md:", os.path.exists("/sandbox/.openclaw-data/workspace/AGENTS.md"))
 print("tools:", os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"))
-print("auth:", os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"))
+print("auth data:", os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"))
+print("auth active:", os.path.exists("/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json"))
 PY'
 
 cat > "$BACKUP_DIR/UNDO.txt" <<UNDO
@@ -222,7 +244,7 @@ To undo this demo patch for sandbox $SANDBOX:
   docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- chmod 644 /sandbox/.openclaw/openclaw.json /sandbox/.openclaw/.config-hash
   docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw/openclaw.json < "$BACKUP_DIR/openclaw-before.json" > /dev/null
   docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- /bin/bash -c 'cd /sandbox/.openclaw && sha256sum openclaw.json > .config-hash && chmod 444 openclaw.json .config-hash'
-  docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- rm -f /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json /sandbox/.openclaw-data/workspace/TOOLS.md
+  docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- rm -f /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json /sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json /sandbox/.openclaw-data/workspace/AGENTS.md /sandbox/.openclaw-data/workspace/TOOLS.md
 
 If you used SEED_DEMO_IDENTITY=1, restore identity files from:
   "$BACKUP_DIR/openclaw-demo-identity-before.tar"
