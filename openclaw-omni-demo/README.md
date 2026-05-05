@@ -307,6 +307,11 @@ Expected: the answer should describe a solid red image. If it falls back to the
 text-only Super model or says it cannot see the image, re-check the `nvidia-omni`
 auth profile and model ID.
 
+On a cold sandbox, the first image-tool call can hit OpenClaw's internal image
+request timeout and print `Image failed` or `Request was aborted`. Retry the same
+command once; the immediate retry should use the warmed Omni endpoint and return
+the red-image description.
+
 ## Step 8: Verify main-agent delegation
 
 Ask `main` to delegate to `vision-operator` and write a result file:
@@ -437,6 +442,19 @@ For Omni image prompts, use `--thinking off`, include `/no_think`, and explicitl
 tell the sub-agent to use the `image` tool. The reasoning checkpoint can
 otherwise spend the request budget in `reasoning_content` and leave the CLI with
 no final answer.
+
+On a freshly-created sandbox, the first `image` tool call may also fail with
+`Image failed` / `Request was aborted` while the Omni endpoint is cold. Retry the
+same direct vision command once before debugging deeper. If the retry still
+fails, confirm the provider path independently:
+
+```bash
+docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- bash -lc '
+node -e "const fs=require(\"fs\");
+const cfg=JSON.parse(fs.readFileSync(\"/sandbox/.openclaw/openclaw.json\",\"utf8\"));
+const key=cfg.models.providers[\"nvidia-omni\"].apiKey;
+console.log(\"provider apiKey present=\" + String((key || \"\").startsWith(\"nvapi-\")))"'
+```
 
 If the CLI keeps printing `Waiting for agent reply...` and then times out, check
 the gateway log for the real provider error:
