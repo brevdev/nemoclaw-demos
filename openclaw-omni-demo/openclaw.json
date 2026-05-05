@@ -118,7 +118,7 @@
       "dangerouslyDisableDeviceAuth": true
     },
     "auth": {
-      "token": "b86bfa08bf8cc2a4f8584524ca73d34de2cdd4b67f5e2d5965f7a647e1261cca"
+      "token": "__OPENCLAW_GATEWAY_TOKEN__"
     },
     "trustedProxies": [
       "127.0.0.1",

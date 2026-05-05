@@ -15,7 +15,7 @@ To analyze any image, delegate to the vision-operator sub-agent using `sessions_
 ```json
 {
   "agentId": "vision-operator",
-  "message": "Use the image tool to inspect /sandbox/.openclaw-data/workspace/frame_000270.jpg, then describe it in detail. /no_think"
+  "message": "Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, then describe it in detail. /no_think"
 }
 ```
 
@@ -34,6 +34,6 @@ To analyze an image, use the `image` tool with the **exact file path** provided 
 IMPORTANT:
 - The demo shared workspace is `/sandbox/.openclaw-data/workspace/`. ALL reads and writes MUST use this path. `/sandbox/.openclaw/workspace` may exist for the main agent, but it is not the shared vision-operator workspace for this demo.
 - When writing output files (e.g. `image-description.md`), always write to `/sandbox/.openclaw-data/workspace/` (e.g. `/sandbox/.openclaw-data/workspace/image-description.md`).
-- Do NOT analyze directories. Only pass the specific image file path to `image` (for example, `/sandbox/.openclaw-data/workspace/frame_000270.jpg`).
+- Do NOT analyze directories. Only pass the specific image file path to `image` (for example, `/sandbox/.openclaw-data/workspace/red.png`).
 - Do NOT try to use `sessions_spawn` — you do not have it and do not need it.
 - You are the final destination for image analysis tasks. Analyze the image yourself and return your findings directly.

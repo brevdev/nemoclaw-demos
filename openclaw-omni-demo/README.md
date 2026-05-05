@@ -29,6 +29,7 @@ re-run onboarding rather than debugging the demo steps.
 | `TOOLS.md` | Workspace file that teaches the main agent to delegate image tasks |
 | `policy.yaml` | Patched OpenShell network policy (with `node` in nvidia binaries) |
 | `scripts/apply-omni-subagent.sh` | Repeatable helper that patches policy, `openclaw.json`, auth profiles, `AGENTS.md`, and `TOOLS.md` |
+| `scripts/verify-omni-demo.sh` | End-to-end smoke test for config, gateway, direct vision, delegation, and missing-image behavior |
 | `scripts/fix-spark-gateway.sh` | Recovery helper for DGX Spark/restricted netns gateway crashes |
 
 ## Known-good model IDs
@@ -349,6 +350,21 @@ openshell sandbox exec -n "$SANDBOX" -- bash -lc \
   'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; openclaw devices approve <requestId> --json'
 ```
 
+## Step 9: Run the smoke test
+
+After the helper has run once, you can repeat the full validation flow without
+keeping the NVIDIA API key in the host shell:
+
+```bash
+SANDBOX=hclaw bash scripts/verify-omni-demo.sh
+```
+
+The smoke test checks config, policy, raw `nvidia-omni` provider auth,
+`openclaw agents list`, gateway connectivity, direct `vision-operator` image
+analysis with one retry for the cold image-tool path, main-agent delegation to
+`image-description.md`, and a missing-image negative test that must not create a
+phantom output file.
+
 ## Troubleshooting
 
 ### Docker works, but NemoClaw reports a Colima socket
@@ -394,11 +410,12 @@ OpenClaw `2026.4.24` does not accept `agents.list[].systemPrompt`. Keep core
 demo instructions in workspace files instead; the helper copies `AGENTS.md` and
 `TOOLS.md` into `/sandbox/.openclaw-data/workspace/`.
 
-### `401 status code` from `nvidia-omni`
+### `401` / `403 status code` from `nvidia-omni`
 
 Usually one of:
 
 - `NVIDIA_API_KEY` does not have access to the Omni model
+- the key has expired or was revoked after the sandbox was patched
 - the in-sandbox provider `apiKey` is still the placeholder from the reference
   config instead of the exported `NVIDIA_API_KEY`
 - auth profile uses the old `providers`/`apiKey` shape instead of the current
@@ -427,6 +444,10 @@ PY
 test -s /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
 test -s /sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json'
 ```
+
+If the smoke test stops at `nvidia-omni provider probe failed` with
+`Authorization failed`, the gateway and agent configuration may still be correct;
+rotate to a key with Omni access and re-run `apply-omni-subagent.sh`.
 
 ### `LLM request timed out.` / `Connection error.`
 

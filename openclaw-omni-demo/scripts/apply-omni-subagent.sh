@@ -238,15 +238,27 @@ kexec /bin/bash -lc 'python3 - <<"PY"
 import json
 import os
 cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
-print("providers:", ", ".join(cfg["models"]["providers"].keys()))
-print("agents:", ", ".join(agent["id"] for agent in cfg["agents"]["list"]))
-print("vision model:", cfg["agents"]["list"][1]["model"]["primary"])
-print("vision workspace:", cfg["agents"]["list"][1]["workspace"])
-print("provider key:", cfg["models"]["providers"]["nvidia-omni"]["apiKey"].startswith("nvapi-"))
-print("agents md:", os.path.exists("/sandbox/.openclaw-data/workspace/AGENTS.md"))
-print("tools:", os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"))
-print("auth data:", os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"))
-print("auth active:", os.path.exists("/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json"))
+providers = cfg["models"]["providers"]
+agents = {agent["id"]: agent for agent in cfg["agents"]["list"]}
+checks = {
+    "provider nvidia-omni": "nvidia-omni" in providers,
+    "provider apiKey": providers.get("nvidia-omni", {}).get("apiKey", "").startswith("nvapi-"),
+    "agent main": "main" in agents,
+    "agent vision-operator": "vision-operator" in agents,
+    "vision model": agents.get("vision-operator", {}).get("model", {}).get("primary", "").startswith("nvidia-omni/"),
+    "vision workspace": agents.get("vision-operator", {}).get("workspace") == "/sandbox/.openclaw-data/workspace",
+    "timeout": cfg["agents"]["defaults"].get("timeoutSeconds", 0) >= 300,
+    "subagent concurrency": cfg["agents"]["defaults"].get("subagents", {}).get("maxConcurrent") == 4,
+    "agents md": os.path.exists("/sandbox/.openclaw-data/workspace/AGENTS.md"),
+    "tools": os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"),
+    "auth data": os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"),
+    "auth active": os.path.exists("/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json"),
+}
+for name, ok in checks.items():
+    print(f"{name}: {ok}")
+failed = [name for name, ok in checks.items() if not ok]
+if failed:
+    raise SystemExit("failed verification checks: " + ", ".join(failed))
 PY'
 
 cat > "$BACKUP_DIR/UNDO.txt" <<UNDO
