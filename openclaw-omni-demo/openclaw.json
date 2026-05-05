@@ -33,7 +33,7 @@
       },
       "nvidia-omni": {
         "baseUrl": "https://integrate.api.nvidia.com/v1",
-        "apiKey": "unused",
+        "apiKey": "__NVIDIA_API_KEY_FROM_ENV__",
         "api": "openai-completions",
         "models": [
           {

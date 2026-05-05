@@ -131,8 +131,9 @@ export NVIDIA_API_KEY=nvapi-...   # must have Omni access
 
 NemoClaw may not leave a plaintext `~/.nemoclaw/credentials.json` on current
 releases, so do not rely on sourcing that file. Keep the key in your shell only
-for the setup step; the helper writes it into the vision operator's in-sandbox
-auth profile and keeps it out of `openclaw.json`.
+for the setup step. The helper streams it into the in-sandbox OpenClaw provider
+config and writes the vision operator auth profile; it does not write the key to
+the repo or the host-side `/tmp` backup config.
 
 ## Step 4: Apply the Omni sub-agent configuration
 
@@ -156,6 +157,7 @@ under `/tmp` with `UNDO.txt` instructions. It:
    block if needed, and reloads the policy.
 2. Patches `/sandbox/.openclaw/openclaw.json` to add:
    - provider `nvidia-omni` pointing at `https://integrate.api.nvidia.com/v1`
+   - the `NVIDIA_API_KEY` value in the in-sandbox provider `apiKey` field
    - `main` + `vision-operator` entries in `agents.list`
    - the vision operator workspace at `/sandbox/.openclaw-data/workspace`
    - sub-agent limits and a longer timeout
@@ -165,7 +167,9 @@ under `/tmp` with `UNDO.txt` instructions. It:
 4. Creates and fixes ownership on the shared workspace, the vision operator
    session directory, and both observed vision-operator agent directories.
 5. Writes the current OpenClaw auth profile format for the vision operator in
-   both observed agent config paths:
+   both observed agent config paths. Current OpenClaw custom providers read the
+   provider `apiKey` directly, but the auth profile is still written for
+   compatibility with builds that consult per-agent auth stores:
 
    ```json
    {
@@ -214,6 +218,7 @@ import os
 cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
 agents = {agent["id"]: agent for agent in cfg["agents"]["list"]}
 assert "nvidia-omni" in cfg["models"]["providers"]
+assert cfg["models"]["providers"]["nvidia-omni"]["apiKey"].startswith("nvapi-")
 assert agents["vision-operator"]["workspace"] == "/sandbox/.openclaw-data/workspace"
 assert cfg["agents"]["defaults"]["timeoutSeconds"] >= 300
 for path in [
@@ -293,8 +298,8 @@ Run the vision operator directly:
 ```bash
 openshell sandbox exec -n "$SANDBOX" -- bash -lc \
   'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
-   openclaw agent --agent vision-operator \
-     --message "Describe the image at /sandbox/.openclaw-data/workspace/red.png in one sentence." \
+   openclaw agent --agent vision-operator --thinking off \
+     --message "Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, then describe it in one sentence. /no_think" \
      --session-id direct-vision-test --timeout 300'
 ```
 
@@ -309,8 +314,8 @@ Ask `main` to delegate to `vision-operator` and write a result file:
 ```bash
 openshell sandbox exec -n "$SANDBOX" -- bash -lc \
   'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
-   openclaw agent --agent main \
-     --message "Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn to describe /sandbox/.openclaw-data/workspace/red.png. Write the final one-sentence description to /sandbox/.openclaw-data/workspace/image-description.md and tell me what you wrote." \
+   openclaw agent --agent main --thinking off \
+     --message "Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn. In the sub-agent message, tell it: Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, return exactly one sentence describing it, use --thinking off behavior if available, and include /no_think. Write the final one-sentence description to /sandbox/.openclaw-data/workspace/image-description.md and tell me what you wrote." \
      --session-id main-vision-delegation-test --timeout 420'
 ```
 
@@ -389,6 +394,8 @@ demo instructions in workspace files instead; the helper copies `AGENTS.md` and
 Usually one of:
 
 - `NVIDIA_API_KEY` does not have access to the Omni model
+- the in-sandbox provider `apiKey` is still the placeholder from the reference
+  config instead of the exported `NVIDIA_API_KEY`
 - auth profile uses the old `providers`/`apiKey` shape instead of the current
   `version` + `profiles` + `key` shape
 - provider/model names do not line up (`nvidia-omni/<model-id>` in the agent,
@@ -406,6 +413,12 @@ Then check both auth-profile paths exist:
 
 ```bash
 docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- bash -lc '
+python3 - <<PY
+import json
+cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
+assert cfg["models"]["providers"]["nvidia-omni"]["apiKey"].startswith("nvapi-")
+print("provider apiKey present")
+PY
 test -s /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
 test -s /sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json'
 ```
@@ -419,6 +432,11 @@ openshell policy get "$SANDBOX" --full | sed -n '/^  nvidia:/,/^  [a-z]/p'
 ```
 
 Re-run the helper if `node` is missing.
+
+For Omni image prompts, use `--thinking off`, include `/no_think`, and explicitly
+tell the sub-agent to use the `image` tool. The reasoning checkpoint can
+otherwise spend the request budget in `reasoning_content` and leave the CLI with
+no final answer.
 
 If the CLI keeps printing `Waiting for agent reply...` and then times out, check
 the gateway log for the real provider error:

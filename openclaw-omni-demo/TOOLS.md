@@ -15,7 +15,7 @@ To analyze any image, delegate to the vision-operator sub-agent using `sessions_
 ```json
 {
   "agentId": "vision-operator",
-  "message": "Describe the image at /sandbox/.openclaw-data/workspace/frame_000270.jpg in detail"
+  "message": "Use the image tool to inspect /sandbox/.openclaw-data/workspace/frame_000270.jpg, then describe it in detail. /no_think"
 }
 ```
 
@@ -29,7 +29,7 @@ When writing files, always use `/sandbox/.openclaw-data/workspace/` as the base 
 
 You ARE the vision-capable agent. You CAN see images. You use the Nemotron-3 Nano Omni model which supports image input.
 
-To analyze an image, use the `image` tool with the **exact file path** provided in your task message. If your runtime presents images through `read`, `read` is also acceptable, but do not treat raw image bytes as visual understanding.
+To analyze an image, use the `image` tool with the **exact file path** provided in your task message. Keep `/no_think` in Omni image prompts; the reasoning checkpoint can otherwise spend the turn in reasoning output instead of returning final content. If your runtime presents images through `read`, `read` is also acceptable, but do not treat raw image bytes as visual understanding.
 
 IMPORTANT:
 - The demo shared workspace is `/sandbox/.openclaw-data/workspace/`. ALL reads and writes MUST use this path. `/sandbox/.openclaw/workspace` may exist for the main agent, but it is not the shared vision-operator workspace for this demo.

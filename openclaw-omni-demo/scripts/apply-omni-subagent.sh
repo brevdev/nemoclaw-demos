@@ -106,8 +106,10 @@ models.setdefault("mode", "merge")
 providers = models.setdefault("providers", {})
 providers["nvidia-omni"] = {
     "baseUrl": "https://integrate.api.nvidia.com/v1",
-    # Keep the real key out of openclaw.json; auth-profiles.json carries it.
-    "apiKey": "unused",
+    # The helper replaces this placeholder while streaming the config into the
+    # sandbox. Keeping the placeholder in the host-side backup avoids writing
+    # the NVIDIA key to /tmp on the host.
+    "apiKey": "__NVIDIA_API_KEY_FROM_ENV__",
     "api": "openai-completions",
     "models": [{
         "id": omni_model,
@@ -146,7 +148,16 @@ with open(dst, "w") as f:
 PY
 chmod 600 "$BACKUP_DIR/openclaw-updated.json"
 kexec chmod 644 /sandbox/.openclaw/openclaw.json /sandbox/.openclaw/.config-hash
-cat "$BACKUP_DIR/openclaw-updated.json" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw/openclaw.json >/dev/null
+python3 - "$BACKUP_DIR/openclaw-updated.json" <<'PY' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw/openclaw.json >/dev/null
+import json
+import os
+import sys
+with open(sys.argv[1]) as f:
+    config = json.load(f)
+config["models"]["providers"]["nvidia-omni"]["apiKey"] = os.environ["NVIDIA_API_KEY"]
+json.dump(config, sys.stdout, indent=2)
+sys.stdout.write("\n")
+PY
 kexec /bin/bash -c 'cd /sandbox/.openclaw && sha256sum openclaw.json > .config-hash && chmod 444 openclaw.json .config-hash'
 
 # 3. Provision the shared workspace and both observed agent data paths. Current
@@ -231,6 +242,7 @@ print("providers:", ", ".join(cfg["models"]["providers"].keys()))
 print("agents:", ", ".join(agent["id"] for agent in cfg["agents"]["list"]))
 print("vision model:", cfg["agents"]["list"][1]["model"]["primary"])
 print("vision workspace:", cfg["agents"]["list"][1]["workspace"])
+print("provider key:", cfg["models"]["providers"]["nvidia-omni"]["apiKey"].startswith("nvapi-"))
 print("agents md:", os.path.exists("/sandbox/.openclaw-data/workspace/AGENTS.md"))
 print("tools:", os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"))
 print("auth data:", os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"))
