@@ -340,12 +340,7 @@ docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- \
 Run the vision operator directly:
 
 ```bash
-openshell sandbox exec -n "$SANDBOX" -- bash -lc \
-  'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
-   export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; \
-   openclaw agent --json --agent vision-operator --thinking off \
-     --message "Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, retry the image tool once if it returns Request was aborted or Image failed, then describe it in one sentence. /no_think" \
-     --session-id direct-vision-test --timeout 300'
+openshell sandbox exec -n "$SANDBOX" -- bash -lc 'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; openclaw agent --json --agent vision-operator --thinking off --message "Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, retry the image tool once if it returns Request was aborted or Image failed, then describe it in one sentence. /no_think" --session-id direct-vision-test --timeout 300'
 ```
 
 Expected: the JSON response should contain `status: ok` and text describing a
@@ -362,12 +357,7 @@ the red-image description.
 Ask `main` to delegate to `vision-operator` and write a result file:
 
 ```bash
-openshell sandbox exec -n "$SANDBOX" -- bash -lc \
-  'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
-   export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; \
-   openclaw agent --agent main --thinking off \
-     --message "Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn. In the sub-agent message, tell it: Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, retry the image tool once if it returns Request was aborted or Image failed, return exactly one sentence describing it, use --thinking off behavior if available, and include /no_think. Write the final one-sentence description to /sandbox/.openclaw-data/workspace/image-description.md and tell me what you wrote." \
-     --session-id main-vision-delegation-test --timeout 420'
+openshell sandbox exec -n "$SANDBOX" -- bash -lc 'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; openclaw agent --agent main --thinking off --message "Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn. In the sub-agent message, tell it: Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, retry the image tool once if it returns Request was aborted or Image failed, return exactly one sentence describing it, use --thinking off behavior if available, and include /no_think. Write the final one-sentence description to /sandbox/.openclaw-data/workspace/image-description.md and tell me what you wrote." --session-id main-vision-delegation-test --timeout 420'
 ```
 
 Confirm the file was written. Sub-agent completion is push-based, so the CLI can
@@ -388,11 +378,9 @@ If the first run reports a pending device scope upgrade, approve the local CLI
 request and retry:
 
 ```bash
-openshell sandbox exec -n "$SANDBOX" -- bash -lc \
-  'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; openclaw devices list --json'
+openshell sandbox exec -n "$SANDBOX" -- bash -lc 'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; openclaw devices list --json'
 
-openshell sandbox exec -n "$SANDBOX" -- bash -lc \
-  'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; openclaw devices approve <requestId> --json'
+openshell sandbox exec -n "$SANDBOX" -- bash -lc 'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; openclaw devices approve <requestId> --json'
 ```
 
 ## Step 9: Run the smoke test
