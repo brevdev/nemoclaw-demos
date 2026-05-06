@@ -20,6 +20,22 @@ onboarding with a Dockerfile patch error for
 `writeConfigFile(params.nextConfig)`. If you hit that, update NemoClaw and
 re-run onboarding rather than debugging the demo steps.
 
+## Reviewer quickstart
+
+For a fast end-to-end review, onboard a fresh sandbox, export a current NVIDIA
+API key with Omni access, then run:
+
+```bash
+export SANDBOX=hclaw
+export NVIDIA_API_KEY=nvapi-...
+SEED_DEMO_IDENTITY=1 bash scripts/apply-omni-subagent.sh
+SANDBOX="$SANDBOX" bash scripts/verify-omni-demo.sh
+```
+
+The smoke test fails fast if the key cannot call the `nvidia-omni` provider. A
+`403 Authorization failed` at that step means the key lacks Omni access or has
+expired; rotate the key and re-run the helper before debugging delegation.
+
 ## What's in this directory
 
 | File | Purpose |
