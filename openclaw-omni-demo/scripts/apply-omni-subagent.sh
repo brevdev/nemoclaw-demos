@@ -15,6 +15,12 @@ OMNI_MODEL="${OMNI_MODEL:-nvidia/nemotron-3-nano-omni-30b-a3b-reasoning}"
 SUPER_MODEL="${SUPER_MODEL:-nvidia/nemotron-3-super-120b-a12b}"
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 BACKUP_DIR="${BACKUP_DIR:-$(mktemp -d "/tmp/${SANDBOX}-openclaw-omni.XXXXXX")}"
+DATA_WORKSPACE="/sandbox/.openclaw-data/workspace"
+DATA_AGENT_DIR="/sandbox/.openclaw-data/agents/vision-operator"
+ACTIVE_AGENT_DIR="/sandbox/.openclaw/agents/vision-operator"
+PLUGIN_RUNTIME_DEPS="/sandbox/.openclaw-data/plugin-runtime-deps"
+ACTIVE_PLUGIN_RUNTIME_DEPS="/sandbox/.openclaw/plugin-runtime-deps"
+DATA_TMP="/sandbox/.openclaw-data/tmp"
 
 log() { printf '→ %s\n' "$*"; }
 need() {
@@ -103,8 +109,10 @@ models.setdefault("mode", "merge")
 providers = models.setdefault("providers", {})
 providers["nvidia-omni"] = {
     "baseUrl": "https://integrate.api.nvidia.com/v1",
-    # Keep the real key out of openclaw.json; auth-profiles.json carries it.
-    "apiKey": "unused",
+    # The helper replaces this placeholder while streaming the config into the
+    # sandbox. Keeping the placeholder in the host-side backup avoids writing
+    # the NVIDIA key to /tmp on the host.
+    "apiKey": "__NVIDIA_API_KEY_FROM_ENV__",
     "api": "openai-completions",
     "models": [{
         "id": omni_model,
@@ -135,18 +143,195 @@ agents["list"] = [
         "tools": {"profile": "full", "deny": ["message", "sessions_spawn"]},
     },
 ]
-# Bonjour/mDNS is not needed for the demo and can fail inside restricted netns.
-config.setdefault("plugins", {}).setdefault("entries", {}).setdefault("bonjour", {})["enabled"] = False
+plugins = config.setdefault("plugins", {})
+plugins["enabled"] = False
+plugins.setdefault("slots", {})["memory"] = "none"
+plugin_entries = plugins.setdefault("entries", {})
+for plugin_id in [
+    # These enabled-by-default extensions are unrelated to the Omni sub-agent
+    # demo. Disabling them keeps first-run CLI checks from staging bundled npm
+    # deps for browsers, speech/media integrations, and unused model providers.
+    "acpx",
+    "alibaba",
+    "amazon-bedrock",
+    "amazon-bedrock-mantle",
+    "anthropic",
+    "anthropic-vertex",
+    "arcee",
+    "bonjour",
+    "browser",
+    "byteplus",
+    "chutes",
+    "cloudflare-ai-gateway",
+    "codex",
+    "comfy",
+    "copilot-proxy",
+    "deepgram",
+    "deepseek",
+    "device-pair",
+    "document-extract",
+    "elevenlabs",
+    "fal",
+    "fireworks",
+    "github-copilot",
+    "google",
+    "groq",
+    "huggingface",
+    "kilocode",
+    "kimi",
+    "litellm",
+    "lmstudio",
+    "microsoft",
+    "microsoft-foundry",
+    "memory-core",
+    "minimax",
+    "mistral",
+    "moonshot",
+    "ollama",
+    "openai",
+    "opencode",
+    "opencode-go",
+    "openrouter",
+    "nvidia",
+    "phone-control",
+    "qianfan",
+    "qqbot",
+    "qwen",
+    "runway",
+    "sglang",
+    "stepfun",
+    "synthetic",
+    "talk-voice",
+    "tencent",
+    "together",
+    "venice",
+    "vercel-ai-gateway",
+    "vllm",
+    "volcengine",
+    "voyage",
+    "vydra",
+    "web-readability",
+    "xai",
+    "xiaomi",
+    "zai",
+]:
+    plugin_entries.setdefault(plugin_id, {})["enabled"] = False
 with open(dst, "w") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
 PY
 chmod 600 "$BACKUP_DIR/openclaw-updated.json"
 kexec chmod 644 /sandbox/.openclaw/openclaw.json /sandbox/.openclaw/.config-hash
-cat "$BACKUP_DIR/openclaw-updated.json" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw/openclaw.json >/dev/null
+python3 - "$BACKUP_DIR/openclaw-updated.json" <<'PY' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw/openclaw.json >/dev/null
+import json
+import os
+import sys
+with open(sys.argv[1]) as f:
+    config = json.load(f)
+config["models"]["providers"]["nvidia-omni"]["apiKey"] = os.environ["NVIDIA_API_KEY"]
+json.dump(config, sys.stdout, indent=2)
+sys.stdout.write("\n")
+PY
 kexec /bin/bash -c 'cd /sandbox/.openclaw && sha256sum openclaw.json > .config-hash && chmod 444 openclaw.json .config-hash'
 
-# 3. Write the per-agent auth profile in the OpenClaw 2026.4 auth-profile format.
+# 3. Provision the shared workspace and both observed agent data paths. Current
+# OpenClaw reports ~/.openclaw/agents/vision-operator/agent as the active agent
+# dir, while older cookbook notes used ~/.openclaw-data/agents.
+log "ensuring demo workspace and vision-operator agent dirs"
+kexec bash -c "mkdir -p \
+  '$DATA_WORKSPACE' \
+  '$DATA_AGENT_DIR/agent' \
+  '$DATA_AGENT_DIR/sessions' \
+  '$ACTIVE_AGENT_DIR/agent' \
+  '$ACTIVE_AGENT_DIR/sessions' \
+  '$PLUGIN_RUNTIME_DEPS' \
+  '$DATA_TMP' && \
+  chown -R sandbox:sandbox \
+  '$DATA_WORKSPACE' \
+  '$DATA_AGENT_DIR' \
+  '$ACTIVE_AGENT_DIR' \
+  '$PLUGIN_RUNTIME_DEPS' \
+  '$DATA_TMP' && \
+  rm -rf '$ACTIVE_PLUGIN_RUNTIME_DEPS' && \
+  ln -sfn '$PLUGIN_RUNTIME_DEPS' '$ACTIVE_PLUGIN_RUNTIME_DEPS' && \
+  find '$PLUGIN_RUNTIME_DEPS' -mindepth 2 -maxdepth 2 -type d -name .openclaw-runtime-deps.lock -prune -exec rm -rf {} +"
+
+# OpenClaw 2026.4 can scan bundled provider plugins during gateway/agent
+# startup before the demo's disabled plugin config has short-circuited every
+# path. Seed dependency sentinels in the external runtime-deps cache so those
+# scans do not spend minutes in npm for extensions this demo never activates.
+log "seeding disabled bundled plugin runtime dependency sentinels"
+kexec bash -lc "PLUGIN_RUNTIME_DEPS='$PLUGIN_RUNTIME_DEPS' python3 - <<'PY'
+import hashlib
+import json
+import os
+import re
+from pathlib import Path
+
+package_root = Path('/usr/local/lib/node_modules/openclaw').resolve()
+extensions_dir = package_root / 'dist' / 'extensions'
+if not extensions_dir.exists():
+    raise SystemExit(0)
+
+version = 'unknown'
+try:
+    version = json.loads((package_root / 'package.json').read_text()).get('version') or version
+except OSError:
+    pass
+package_key = 'openclaw-{}-{}'.format(
+    re.sub(r'[^A-Za-z0-9._-]+', '-', version).strip('-') or 'unknown',
+    hashlib.sha256(str(package_root).encode()).hexdigest()[:12],
+)
+install_root = Path(os.environ['PLUGIN_RUNTIME_DEPS']) / package_key
+node_modules = install_root / 'node_modules'
+node_modules.mkdir(parents=True, exist_ok=True)
+
+def normalized_version(spec):
+    spec = str(spec).strip()
+    if not spec or spec.lower().startswith('workspace:'):
+        return None
+    if spec[0] in '^~':
+        spec = spec[1:]
+    return spec if re.match(r'^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$', spec) else None
+
+deps = {}
+for package_json in extensions_dir.glob('*/package.json'):
+    try:
+        data = json.loads(package_json.read_text())
+    except (OSError, json.JSONDecodeError):
+        continue
+    for name, raw_spec in (data.get('dependencies') or {}).items():
+        version = normalized_version(raw_spec)
+        if version:
+            deps[name] = version
+
+index_js = '''export default {};
+export class BedrockClient { async send() { return {}; } }
+export class BedrockRuntimeClient { async send() { return {}; } }
+export class GetInferenceProfileCommand { constructor(input) { this.input = input; } }
+export class ListFoundationModelsCommand { constructor(input) { this.input = input; } }
+export class ListInferenceProfilesCommand { constructor(input) { this.input = input; } }
+'''
+
+for name, version in sorted(deps.items()):
+    package_dir = node_modules.joinpath(*name.split('/'))
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / 'package.json').write_text(json.dumps({
+        'name': name,
+        'version': version,
+        'type': 'module',
+        'exports': './index.js',
+    }, indent=2) + '\\n')
+    (package_dir / 'index.js').write_text(index_js)
+
+(install_root / '.openclaw-runtime-deps.json').write_text(json.dumps({
+    'specs': sorted(f'{name}@{version}' for name, version in deps.items())
+}, indent=2) + '\\n')
+print(f'seeded {len(deps)} bundled runtime dependency sentinels in {install_root}')
+PY
+chown -R sandbox:sandbox '$PLUGIN_RUNTIME_DEPS'"
+
+# 4. Write the per-agent auth profile in the OpenClaw 2026.4 auth-profile format.
 log "writing vision-operator auth profile"
 auth_profile=$(python3 - <<'PY'
 import json
@@ -166,22 +351,23 @@ print(json.dumps({
 }, indent=2))
 PY
 )
-kexec bash -c 'mkdir -p /sandbox/.openclaw-data/agents/vision-operator/agent && chown -R sandbox:sandbox /sandbox/.openclaw-data/agents/vision-operator'
-printf '%s\n' "$auth_profile" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json >/dev/null
-kexec chmod 600 /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
-kexec chown sandbox:sandbox /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
+printf '%s\n' "$auth_profile" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_AGENT_DIR/agent/auth-profiles.json" >/dev/null
+printf '%s\n' "$auth_profile" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$ACTIVE_AGENT_DIR/agent/auth-profiles.json" >/dev/null
+kexec chmod 600 "$DATA_AGENT_DIR/agent/auth-profiles.json" "$ACTIVE_AGENT_DIR/agent/auth-profiles.json"
+kexec chown sandbox:sandbox "$DATA_AGENT_DIR/agent/auth-profiles.json" "$ACTIVE_AGENT_DIR/agent/auth-profiles.json"
 
-# 4. Copy demo instructions into the shared workspace.
-log "copying TOOLS.md into workspace"
-cat "$HERE/TOOLS.md" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/workspace/TOOLS.md >/dev/null
+# 5. Copy demo instructions into the shared workspace.
+log "copying AGENTS.md and TOOLS.md into workspace"
+cat "$HERE/AGENTS.md" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/AGENTS.md" >/dev/null
+cat "$HERE/TOOLS.md" | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/TOOLS.md" >/dev/null
 
-# 5. Optional: seed identity so scripted smoke tests do not get intercepted by BOOTSTRAP.md.
+# 6. Optional: seed identity so scripted smoke tests do not get intercepted by BOOTSTRAP.md.
 if [[ "${SEED_DEMO_IDENTITY:-0}" == "1" ]]; then
     log "seeding demo identity and moving BOOTSTRAP.md aside"
-    kexec bash -c 'cd /sandbox/.openclaw-data/workspace && tar cf /tmp/openclaw-demo-identity-before.tar BOOTSTRAP.md IDENTITY.md USER.md SOUL.md 2>/dev/null || true'
+    kexec bash -c "cd '$DATA_WORKSPACE' && tar cf /tmp/openclaw-demo-identity-before.tar BOOTSTRAP.md IDENTITY.md USER.md SOUL.md 2>/dev/null || true"
     kexec cat /tmp/openclaw-demo-identity-before.tar > "$BACKUP_DIR/openclaw-demo-identity-before.tar" 2>/dev/null || true
-    kexec bash -c 'cd /sandbox/.openclaw-data/workspace && [ ! -f BOOTSTRAP.md ] || mv BOOTSTRAP.md BOOTSTRAP.md.disabled-for-omni-demo'
-    cat <<'IDENTITY' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/workspace/IDENTITY.md >/dev/null
+    kexec bash -c "cd '$DATA_WORKSPACE' && [ ! -f BOOTSTRAP.md ] || mv BOOTSTRAP.md BOOTSTRAP.md.disabled-for-omni-demo"
+    cat <<'IDENTITY' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/IDENTITY.md" >/dev/null
 # IDENTITY.md - Who Am I?
 
 - **Name:** Claw Demo
@@ -191,7 +377,7 @@ if [[ "${SEED_DEMO_IDENTITY:-0}" == "1" ]]; then
 
 This identity was pre-seeded for the NemoClaw Omni vision sub-agent demo.
 IDENTITY
-    cat <<'USER' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw-data/workspace/USER.md >/dev/null
+    cat <<'USER' | docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee "$DATA_WORKSPACE/USER.md" >/dev/null
 # USER.md - Human Context
 
 - **Name:** Demo operator
@@ -199,7 +385,7 @@ IDENTITY
 USER
 fi
 
-# 6. Make the task registry path writable when the current OpenClaw build expects it.
+# 7. Make the task registry path writable when the current OpenClaw build expects it.
 log "ensuring writable task registry path"
 kexec bash -c 'mkdir -p /sandbox/.openclaw-data/tasks && chown -R sandbox:sandbox /sandbox/.openclaw-data/tasks && rm -rf /sandbox/.openclaw/tasks && ln -s /sandbox/.openclaw-data/tasks /sandbox/.openclaw/tasks'
 
@@ -208,11 +394,47 @@ kexec /bin/bash -lc 'python3 - <<"PY"
 import json
 import os
 cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
-print("providers:", ", ".join(cfg["models"]["providers"].keys()))
-print("agents:", ", ".join(agent["id"] for agent in cfg["agents"]["list"]))
-print("vision model:", cfg["agents"]["list"][1]["model"]["primary"])
-print("tools:", os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"))
-print("auth:", os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"))
+providers = cfg["models"]["providers"]
+agents = {agent["id"]: agent for agent in cfg["agents"]["list"]}
+unused_plugins = [
+    "acpx", "alibaba", "amazon-bedrock", "amazon-bedrock-mantle",
+    "anthropic", "anthropic-vertex", "arcee", "bonjour", "browser",
+    "byteplus", "chutes", "cloudflare-ai-gateway", "codex", "comfy",
+    "copilot-proxy", "deepgram", "deepseek", "device-pair", "document-extract",
+    "elevenlabs", "fal", "fireworks", "github-copilot", "google",
+    "groq", "huggingface", "kilocode", "kimi", "litellm", "lmstudio",
+    "memory-core", "microsoft", "microsoft-foundry", "minimax", "mistral", "moonshot",
+    "ollama", "openai", "opencode", "opencode-go", "openrouter", "nvidia",
+    "phone-control",
+    "qianfan", "qqbot", "qwen", "runway", "sglang", "stepfun",
+    "synthetic", "talk-voice", "tencent", "together", "venice", "vercel-ai-gateway",
+    "vllm", "volcengine", "voyage", "vydra", "web-readability", "xai",
+    "xiaomi", "zai",
+]
+plugin_entries = cfg.get("plugins", {}).get("entries", {})
+checks = {
+    "provider nvidia-omni": "nvidia-omni" in providers,
+    "provider apiKey": providers.get("nvidia-omni", {}).get("apiKey", "").startswith("nvapi-"),
+    "agent main": "main" in agents,
+    "agent vision-operator": "vision-operator" in agents,
+    "vision model": agents.get("vision-operator", {}).get("model", {}).get("primary", "").startswith("nvidia-omni/"),
+    "vision workspace": agents.get("vision-operator", {}).get("workspace") == "/sandbox/.openclaw-data/workspace",
+    "timeout": cfg["agents"]["defaults"].get("timeoutSeconds", 0) >= 300,
+    "subagent concurrency": cfg["agents"]["defaults"].get("subagents", {}).get("maxConcurrent") == 4,
+    "agents md": os.path.exists("/sandbox/.openclaw-data/workspace/AGENTS.md"),
+    "tools": os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"),
+    "auth data": os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"),
+    "auth active": os.path.exists("/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json"),
+    "plugin deps": os.path.islink("/sandbox/.openclaw/plugin-runtime-deps") or os.path.isdir("/sandbox/.openclaw/plugin-runtime-deps"),
+    "plugins globally disabled": cfg.get("plugins", {}).get("enabled") is False,
+    "memory plugin slot disabled": cfg.get("plugins", {}).get("slots", {}).get("memory") == "none",
+    "unused plugins disabled": all(plugin_entries.get(plugin_id, {}).get("enabled") is False for plugin_id in unused_plugins),
+}
+for name, ok in checks.items():
+    print(f"{name}: {ok}")
+failed = [name for name, ok in checks.items() if not ok]
+if failed:
+    raise SystemExit("failed verification checks: " + ", ".join(failed))
 PY'
 
 cat > "$BACKUP_DIR/UNDO.txt" <<UNDO
@@ -222,7 +444,7 @@ To undo this demo patch for sandbox $SANDBOX:
   docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- chmod 644 /sandbox/.openclaw/openclaw.json /sandbox/.openclaw/.config-hash
   docker exec -i "$DOCKER_CTR" kubectl exec -i -n openshell "$SANDBOX" -- tee /sandbox/.openclaw/openclaw.json < "$BACKUP_DIR/openclaw-before.json" > /dev/null
   docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- /bin/bash -c 'cd /sandbox/.openclaw && sha256sum openclaw.json > .config-hash && chmod 444 openclaw.json .config-hash'
-  docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- rm -f /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json /sandbox/.openclaw-data/workspace/TOOLS.md
+  docker exec "$DOCKER_CTR" kubectl exec -n openshell "$SANDBOX" -- rm -f /sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json /sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json /sandbox/.openclaw-data/workspace/AGENTS.md /sandbox/.openclaw-data/workspace/TOOLS.md
 
 If you used SEED_DEMO_IDENTITY=1, restore identity files from:
   "$BACKUP_DIR/openclaw-demo-identity-before.tar"
