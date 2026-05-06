@@ -188,13 +188,34 @@ assert_contains_red "delegation output file" "$description"
 
 log "running missing-image negative test"
 kexec rm -f "$WORKSPACE/missing-image-description.md"
-missing_output="$(run_agent "openclaw agent --agent vision-operator --thinking off --message 'Use the image tool to inspect $WORKSPACE/does-not-exist.png. If it fails, report the error and do not write $WORKSPACE/missing-image-description.md. /no_think' --session-id missing-image-smoke-$(date +%s) --timeout 180" 2>&1 || true)"
+missing_started="$(date +%s)"
+missing_output="$(run_agent "openclaw agent --agent vision-operator --thinking off --message 'Use the image tool to inspect $WORKSPACE/does-not-exist.png. If it fails, report the error and do not write $WORKSPACE/missing-image-description.md. /no_think' --session-id missing-image-smoke-$missing_started --timeout 180" 2>&1 || true)"
 if sandbox_exec test -e "$WORKSPACE/missing-image-description.md" >/dev/null 2>&1; then
     fail "missing-image test created a phantom output file"
 fi
 if ! grep -Eiq 'fail|error|not found|no such' <<<"$missing_output"; then
-    printf '%s\n' "$missing_output" >&2
-    fail "missing-image test did not report a clean failure"
+    missing_trace="$(kexec bash -lc "python3 - <<'PY'
+import glob
+import os
+start = float(${missing_started})
+needle = 'Local media file not found: ${WORKSPACE}/does-not-exist.png'
+for path in glob.glob('/sandbox/.openclaw/agents/vision-operator/sessions/*.jsonl') + glob.glob('/tmp/openclaw-*/*.log'):
+    try:
+        if os.path.getmtime(path) < start - 1:
+            continue
+        with open(path, errors='ignore') as f:
+            text = f.read()
+    except OSError:
+        continue
+    if needle in text:
+        print(path)
+        raise SystemExit(0)
+raise SystemExit(1)
+PY" 2>/dev/null || true)"
+    if [[ -z "$missing_trace" ]]; then
+        printf '%s\n' "$missing_output" >&2
+        fail "missing-image test did not report or log a clean failure"
+    fi
 fi
 
 log "all checks passed"
