@@ -32,14 +32,18 @@ if ! nemoclaw "$SANDBOX" status >/dev/null 2>&1; then
     exit 1
 fi
 
-# Hermes config/state: current NemoClaw images use /sandbox/.hermes; older
-# images used /sandbox/.hermes-data (see NemoClaw agents/hermes/manifest.yaml).
+# Hermes config/state: /sandbox/.hermes can be a read-only front door with
+# symlinks into the mutable state dir. Prefer the writable data dir when present.
+# In current images this resolves to /sandbox/.hermes-data, so config edits
+# target /sandbox/.hermes-data/config.yaml, script uploads land at
+# /sandbox/.hermes-data/workspace/, and SOUL.md lands at
+# /sandbox/.hermes-data/memories/SOUL.md.
 # One line: openshell rejects newlines inside exec command arguments (gRPC).
 HERMES_STATE=$(openshell sandbox exec -n "$SANDBOX" -- bash -c \
-  'if [ -f /sandbox/.hermes/config.yaml ]; then echo /sandbox/.hermes; elif [ -f /sandbox/.hermes-data/config.yaml ]; then echo /sandbox/.hermes-data; else echo MISSING; fi' \
+  'for d in /sandbox/.hermes-data /sandbox/.hermes; do if [ -f "$d/config.yaml" ] && [ -d "$d/workspace" ] && [ -d "$d/memories" ]; then echo "$d"; exit; fi; done; echo MISSING' \
   | tr -d '\r\n[:space:]')
 if [[ "$HERMES_STATE" == "MISSING" ]]; then
-    echo "✗ Hermes config.yaml not found under /sandbox/.hermes or /sandbox/.hermes-data." >&2
+    echo "✗ Hermes state not found under /sandbox/.hermes-data or /sandbox/.hermes." >&2
     exit 1
 fi
 

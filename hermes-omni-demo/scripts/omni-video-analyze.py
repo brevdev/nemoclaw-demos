@@ -193,6 +193,7 @@ def _build_content_blocks(path: str, prompt: str) -> list:
     if os.path.isdir(path):
         # PDF-pages dir (images only) — instructions first, then pages.
         blocks: list = [{"type": "text", "text": prompt}]
+
         pages = sorted(
             os.path.join(path, f)
             for f in os.listdir(path)
@@ -213,32 +214,31 @@ def _build_content_blocks(path: str, prompt: str) -> list:
         data_b64 = base64.b64encode(f.read()).decode()
 
     if ext in AUDIO_EXTS:
-        return [
-            {
-                "type": "input_audio",
-                "input_audio": {
-                    "data": data_b64,
-                    "format": "mp3" if ext == "mp3" else "wav",
-                },
+        blocks = []
+        blocks.append({
+            "type": "input_audio",
+            "input_audio": {
+                "data": data_b64,
+                "format": "mp3" if ext == "mp3" else "wav",
             },
-            {"type": "text", "text": prompt},
-        ]
-    if ext in IMAGE_EXTS:
-        return [
-            {"type": "text", "text": prompt},
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/{ext};base64,{data_b64}"},
-            },
-        ]
-    # video — match NVIDIA video example: clip first, question second
-    return [
-        {
+        })
+        blocks.append({"type": "text", "text": prompt})
+    elif ext in IMAGE_EXTS:
+        blocks = [{"type": "text", "text": prompt}]
+        blocks.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/{ext};base64,{data_b64}"},
+        })
+    else:
+        # video — match NVIDIA video example: clip first, question second.
+        blocks = []
+        blocks.append({
             "type": "video_url",
             "video_url": {"url": f"data:video/{ext};base64,{data_b64}"},
-        },
-        {"type": "text", "text": prompt},
-    ]
+        })
+        blocks.append({"type": "text", "text": prompt})
+
+    return blocks
 
 
 def _post(payload: dict) -> dict:
