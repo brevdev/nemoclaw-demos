@@ -58,17 +58,19 @@ Use your distro's equivalent for `ffmpeg`, `poppler-utils`, `lsof`, and the Pyth
 
 ## Quickstart (6 steps, ~6 min)
 
-If you've already got NemoClaw installed, this is the short version. The longer walkthrough below explains each step.
+Use this if you're starting from a fresh Brev/Ubuntu box. If NemoClaw and OpenShell are already installed, skip step 1 and continue with the clone/onboard steps. The quickstart still includes one interactive step: during onboarding, choose **NVIDIA Endpoints** as the inference provider. The longer walkthrough below explains each step.
 
 ```bash
-# 1. install the NemoClaw + OpenShell CLIs
+# 1. install the NemoClaw + OpenShell CLIs from NVIDIA, if needed
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash && source ~/.bashrc
 
 # 2. clone this cookbook
 git clone https://github.com/brevdev/nemoclaw-demos.git
 cd nemoclaw-demos/hermes-omni-demo
 
-# 3. onboard a sandbox (interactive — pick name "my-hermes", model "1", accept presets)
+# 3. onboard a sandbox
+# interactive: choose "NVIDIA Endpoints", paste your nvapi key, pick name "my-hermes",
+# pick the default Super model for now, then accept/skip optional presets
 nemoclaw onboard --agent hermes
 
 # 4. configure the sandbox: switch to Omni, apply policy, install skills
@@ -177,17 +179,17 @@ Sandbox: my-hermes
 The onboarding wizard only offers Super 120B. We need Omni so Hermes can handle video, audio, and images. Three things to update:
 
 ```bash
-# 1. The gateway route — this is what actually executes calls
+# 1. Runtime route — this is what actually executes model calls
 openshell inference set \
     --provider nvidia-prod \
     --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
 
-# 2. Hermes's in-sandbox config — controls the TUI banner display
+# 2. Display label — updates the Hermes TUI banner
 openshell sandbox exec -n my-hermes -- bash -c \
     "sed -i 's|nvidia/nemotron-3-super-120b-a12b|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning|' \
      /sandbox/.hermes-data/config.yaml"
 
-# 3. Host-side metadata — controls `nemoclaw list` output
+# 3. Display label — updates `nemoclaw list`
 python3 -c "
 import json, pathlib, sys
 p = pathlib.Path.home() / '.nemoclaw' / 'sandboxes.json'
@@ -228,7 +230,7 @@ my-hermes
   model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning  provider: nvidia-prod
 ```
 
-If you skip step 2 or 3, the model name in `nemoclaw list` and the Hermes TUI banner will lie about what's actually running. The gateway route (step 1) is what determines real behavior; steps 2 and 3 are display-only.
+Step 1 changes the runtime route, so it determines which model the sandbox actually calls. If you skip step 1, the demo is still using the model selected during onboarding. Steps 2 and 3 only keep labels in sync: if you run step 1 but skip either label update, Omni may be running correctly while the Hermes TUI banner or `nemoclaw list` still shows the old Super model.
 
 ### Part 4 — Clone the cookbook, set the SANDBOX env var
 
@@ -579,7 +581,7 @@ SANDBOX=my-hermes bash scripts/setup.sh
 | `hermes skills list` prints one letter per line (unreadable table) | Hermes uses Rich; `openshell sandbox exec` often exposes width 1. Run: `openshell sandbox exec -n $SANDBOX -- env COLUMNS=120 LINES=40 hermes skills list`. Or run `hermes skills list` after `nemoclaw $SANDBOX connect` in a normal shell. |
 | UI shows "Hermes produced no visible answer (exit 0)" | Run the skill directly to see the real error: `openshell sandbox exec -n my-hermes -- python3 /sandbox/.hermes-data/workspace/omni-video-analyze.py /tmp/<latest-upload> "test"` (find the upload with `openshell sandbox exec -n my-hermes -- ls -lt /tmp \| head -5`). The error message in the UI now includes the last 20 lines of Hermes output, which will tell you whether it's a payload-size, model-routing, or token-budget issue. |
 | UI shows "Hermes produced no visible answer (exit 1)" with no detail | Hermes itself crashed. Check that `/sandbox/.hermes/SOUL.md` exists and is readable (it's a symlink to `/sandbox/.hermes-data/memories/SOUL.md` in current sandbox images). Re-run `bash scripts/setup.sh` — its final step verifies SOUL is visible to Hermes. |
-| TUI banner / `nemoclaw list` shows Super 120B even after the swap | Display labels weren't updated. Re-run the two `sed`/`python3` commands in Part 3. The gateway route is correct; only the labels lie. |
+| TUI banner / `nemoclaw list` shows Super 120B even after the swap | Display labels weren't updated. Run `openshell inference get` first; that shows the actual runtime model. If it shows Omni, re-run the two label-update commands in Part 3 so the TUI and `nemoclaw list` match runtime behavior. |
 | `SSL EOF occurred in violation of protocol` from `omni-video-analyze.py` | Payload exceeded ~9 MB. Use `chunk-upload.sh` (Long Videos section), or trim with `ffmpeg -i big.mp4 -t 120 -c copy small.mp4`. |
 | `'NoneType' object has no attribute 'strip'` mid-chunked-run | Old script. Re-upload the v3 from `scripts/omni-video-analyze.py`. |
 | `Connection refused` on `inference.local` from inside the sandbox | Gateway lost its route. Re-run `openshell inference set ...` from Part 3. |
