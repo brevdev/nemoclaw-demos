@@ -178,11 +178,17 @@ under `/tmp` with `UNDO.txt` instructions. It:
    - `main` + `vision-operator` entries in `agents.list`
    - the vision operator workspace at `/sandbox/.openclaw-data/workspace`
    - sub-agent limits and a longer timeout
-   - `plugins.entries.bonjour.enabled=false` because mDNS discovery is not
-     required for this demo and can fail inside restricted network namespaces
+   - sets `plugins.enabled=false` and disables enabled-by-default extensions
+     this demo does not use, including browser, speech/media integrations, chat
+     integrations, and unused model providers, so OpenClaw CLI checks do not
+     spend minutes staging unrelated npm runtime dependencies
+   - disables the default memory plugin slot and seeds runtime dependency
+     sentinels for disabled bundled extensions so fresh gateway/agent startup
+     does not block on unrelated npm installs
 3. Recomputes `/sandbox/.openclaw/.config-hash`.
 4. Creates and fixes ownership on the shared workspace, the vision operator
-   session directory, and both observed vision-operator agent directories.
+   session directory, both observed vision-operator agent directories, and the
+   plugin runtime dependency cache path.
 5. Writes the current OpenClaw auth profile format for the vision operator in
    both observed agent config paths. Current OpenClaw custom providers read the
    provider `apiKey` directly, but the auth profile is still written for
@@ -212,7 +218,10 @@ under `/tmp` with `UNDO.txt` instructions. It:
 Verify the config:
 
 ```bash
-openshell sandbox exec -n "$SANDBOX" -- openclaw agents list
+openshell sandbox exec -n "$SANDBOX" -- bash -lc \
+  'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
+   export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; \
+   openclaw agents list'
 ```
 
 Expected:
@@ -238,11 +247,14 @@ assert "nvidia-omni" in cfg["models"]["providers"]
 assert cfg["models"]["providers"]["nvidia-omni"]["apiKey"].startswith("nvapi-")
 assert agents["vision-operator"]["workspace"] == "/sandbox/.openclaw-data/workspace"
 assert cfg["agents"]["defaults"]["timeoutSeconds"] >= 300
+assert cfg["plugins"]["enabled"] is False
+assert cfg["plugins"]["slots"]["memory"] == "none"
 for path in [
     "/sandbox/.openclaw-data/workspace/AGENTS.md",
     "/sandbox/.openclaw-data/workspace/TOOLS.md",
     "/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json",
     "/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json",
+    "/sandbox/.openclaw/plugin-runtime-deps",
 ]:
     assert os.path.exists(path), path
 print("omni demo config ok")
@@ -252,16 +264,30 @@ PY'
 `kubectl exec` may print `Defaulted container "agent"` on stderr. That is normal
 Kubernetes noise for this pod and is not an error by itself.
 
+`openclaw agents list` should normally return in seconds after the helper
+finishes. If it prints `[plugins] ... staging bundled runtime deps` for browser,
+Bedrock, Anthropic, ElevenLabs, Deepgram, document extraction, GitHub Copilot,
+Microsoft, QQBot, or another unrelated extension, stop it and re-run the current
+helper; those plugins are not needed for this demo and should be disabled by the
+patched config.
+
 ## Step 5: Ensure the OpenClaw gateway is reachable
 
 Check gateway health from inside the sandbox:
 
 ```bash
-openshell sandbox exec -n "$SANDBOX" -- bash -lc \
-  'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; openclaw gateway status'
+openshell sandbox exec -n "$SANDBOX" -- python3 - <<'PY'
+import socket
+with socket.create_connection(("127.0.0.1", 18789), timeout=5):
+    print("Connectivity probe: ok")
+PY
 ```
 
 If the output says `Connectivity probe: ok`, continue.
+
+This direct probe avoids loading the OpenClaw plugin registry during readiness
+checks. `openclaw gateway status` can stage bundled runtime dependencies for
+unrelated providers on a fresh sandbox, which makes a healthy gateway look stuck.
 
 ### DGX Spark / restricted netns recovery
 
@@ -279,9 +305,10 @@ Run the recovery helper after `apply-omni-subagent.sh`:
 bash scripts/fix-spark-gateway.sh
 ```
 
-It uses the NemoClaw proxy/guard environment and starts a foreground-style
-sandbox gateway in the background. Logs are in `/tmp/gateway-manual.log` inside
-the sandbox; the PID is in `/tmp/gateway-manual.pid`.
+It uses the NemoClaw proxy/guard environment, starts a foreground-style sandbox
+gateway in the background, and waits with the same direct TCP probe above. Logs
+are in `/tmp/gateway-manual.log` inside the sandbox; the PID is in
+`/tmp/gateway-manual.pid`.
 
 ## Step 6: Upload a test image
 
@@ -315,14 +342,15 @@ Run the vision operator directly:
 ```bash
 openshell sandbox exec -n "$SANDBOX" -- bash -lc \
   'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
-   openclaw agent --agent vision-operator --thinking off \
-     --message "Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, then describe it in one sentence. /no_think" \
+   export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; \
+   openclaw agent --json --agent vision-operator --thinking off \
+     --message "Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, retry the image tool once if it returns Request was aborted or Image failed, then describe it in one sentence. /no_think" \
      --session-id direct-vision-test --timeout 300'
 ```
 
-Expected: the answer should describe a solid red image. If it falls back to the
-text-only Super model or says it cannot see the image, re-check the `nvidia-omni`
-auth profile and model ID.
+Expected: the JSON response should contain `status: ok` and text describing a
+solid red image. If it falls back to the text-only Super model or says it cannot
+see the image, re-check the `nvidia-omni` auth profile and model ID.
 
 On a cold sandbox, the first image-tool call can hit OpenClaw's internal image
 request timeout and print `Image failed` or `Request was aborted`. Retry the same
@@ -336,8 +364,9 @@ Ask `main` to delegate to `vision-operator` and write a result file:
 ```bash
 openshell sandbox exec -n "$SANDBOX" -- bash -lc \
   'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
+   export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; \
    openclaw agent --agent main --thinking off \
-     --message "Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn. In the sub-agent message, tell it: Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, return exactly one sentence describing it, use --thinking off behavior if available, and include /no_think. Write the final one-sentence description to /sandbox/.openclaw-data/workspace/image-description.md and tell me what you wrote." \
+     --message "Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn. In the sub-agent message, tell it: Use the image tool to inspect /sandbox/.openclaw-data/workspace/red.png, retry the image tool once if it returns Request was aborted or Image failed, return exactly one sentence describing it, use --thinking off behavior if available, and include /no_think. Write the final one-sentence description to /sandbox/.openclaw-data/workspace/image-description.md and tell me what you wrote." \
      --session-id main-vision-delegation-test --timeout 420'
 ```
 
@@ -346,7 +375,7 @@ return a short `completed` marker before the final write is visible; wait until
 the file appears:
 
 ```bash
-for _ in $(seq 1 60); do
+for _ in $(seq 1 180); do
   if openshell sandbox exec -n "$SANDBOX" -- test -s /sandbox/.openclaw-data/workspace/image-description.md; then
     openshell sandbox exec -n "$SANDBOX" -- cat /sandbox/.openclaw-data/workspace/image-description.md
     break
@@ -524,6 +553,33 @@ SEED_DEMO_IDENTITY=1 bash scripts/apply-omni-subagent.sh
 
 Use `/sandbox/.openclaw-data/workspace/`, not `/sandbox/.openclaw/workspace`.
 `TOOLS.md` repeats this for both agents.
+
+### OpenClaw CLI stalls while staging plugin runtime deps
+
+Older versions of this helper did not prepare
+`/sandbox/.openclaw/plugin-runtime-deps` or disable unrelated bundled plugins.
+On a fresh sandbox, OpenClaw CLI checks such as `openclaw agents list` or
+`openclaw gateway status` could then spend several minutes trying to install
+browser, speech/media, chat, or unused model-provider dependencies before
+returning.
+
+Re-run the current helper:
+
+```bash
+SEED_DEMO_IDENTITY=1 bash scripts/apply-omni-subagent.sh
+```
+
+Then retry:
+
+```bash
+openshell sandbox exec -n "$SANDBOX" -- bash -lc \
+  'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; \
+   export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; \
+   openclaw agents list'
+```
+
+For gateway readiness, use the direct TCP probe in Step 5 instead of
+`openclaw gateway status`.
 
 ## Starting over
 

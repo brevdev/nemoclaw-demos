@@ -18,6 +18,9 @@ BACKUP_DIR="${BACKUP_DIR:-$(mktemp -d "/tmp/${SANDBOX}-openclaw-omni.XXXXXX")}"
 DATA_WORKSPACE="/sandbox/.openclaw-data/workspace"
 DATA_AGENT_DIR="/sandbox/.openclaw-data/agents/vision-operator"
 ACTIVE_AGENT_DIR="/sandbox/.openclaw/agents/vision-operator"
+PLUGIN_RUNTIME_DEPS="/sandbox/.openclaw-data/plugin-runtime-deps"
+ACTIVE_PLUGIN_RUNTIME_DEPS="/sandbox/.openclaw/plugin-runtime-deps"
+DATA_TMP="/sandbox/.openclaw-data/tmp"
 
 log() { printf '→ %s\n' "$*"; }
 need() {
@@ -140,8 +143,79 @@ agents["list"] = [
         "tools": {"profile": "full", "deny": ["message", "sessions_spawn"]},
     },
 ]
-# Bonjour/mDNS is not needed for the demo and can fail inside restricted netns.
-config.setdefault("plugins", {}).setdefault("entries", {}).setdefault("bonjour", {})["enabled"] = False
+plugins = config.setdefault("plugins", {})
+plugins["enabled"] = False
+plugins.setdefault("slots", {})["memory"] = "none"
+plugin_entries = plugins.setdefault("entries", {})
+for plugin_id in [
+    # These enabled-by-default extensions are unrelated to the Omni sub-agent
+    # demo. Disabling them keeps first-run CLI checks from staging bundled npm
+    # deps for browsers, speech/media integrations, and unused model providers.
+    "acpx",
+    "alibaba",
+    "amazon-bedrock",
+    "amazon-bedrock-mantle",
+    "anthropic",
+    "anthropic-vertex",
+    "arcee",
+    "bonjour",
+    "browser",
+    "byteplus",
+    "chutes",
+    "cloudflare-ai-gateway",
+    "codex",
+    "comfy",
+    "copilot-proxy",
+    "deepgram",
+    "deepseek",
+    "device-pair",
+    "document-extract",
+    "elevenlabs",
+    "fal",
+    "fireworks",
+    "github-copilot",
+    "google",
+    "groq",
+    "huggingface",
+    "kilocode",
+    "kimi",
+    "litellm",
+    "lmstudio",
+    "microsoft",
+    "microsoft-foundry",
+    "memory-core",
+    "minimax",
+    "mistral",
+    "moonshot",
+    "ollama",
+    "openai",
+    "opencode",
+    "opencode-go",
+    "openrouter",
+    "nvidia",
+    "phone-control",
+    "qianfan",
+    "qqbot",
+    "qwen",
+    "runway",
+    "sglang",
+    "stepfun",
+    "synthetic",
+    "talk-voice",
+    "tencent",
+    "together",
+    "venice",
+    "vercel-ai-gateway",
+    "vllm",
+    "volcengine",
+    "voyage",
+    "vydra",
+    "web-readability",
+    "xai",
+    "xiaomi",
+    "zai",
+]:
+    plugin_entries.setdefault(plugin_id, {})["enabled"] = False
 with open(dst, "w") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
@@ -169,11 +243,93 @@ kexec bash -c "mkdir -p \
   '$DATA_AGENT_DIR/agent' \
   '$DATA_AGENT_DIR/sessions' \
   '$ACTIVE_AGENT_DIR/agent' \
-  '$ACTIVE_AGENT_DIR/sessions' && \
+  '$ACTIVE_AGENT_DIR/sessions' \
+  '$PLUGIN_RUNTIME_DEPS' \
+  '$DATA_TMP' && \
   chown -R sandbox:sandbox \
   '$DATA_WORKSPACE' \
   '$DATA_AGENT_DIR' \
-  '$ACTIVE_AGENT_DIR'"
+  '$ACTIVE_AGENT_DIR' \
+  '$PLUGIN_RUNTIME_DEPS' \
+  '$DATA_TMP' && \
+  rm -rf '$ACTIVE_PLUGIN_RUNTIME_DEPS' && \
+  ln -sfn '$PLUGIN_RUNTIME_DEPS' '$ACTIVE_PLUGIN_RUNTIME_DEPS' && \
+  find '$PLUGIN_RUNTIME_DEPS' -mindepth 2 -maxdepth 2 -type d -name .openclaw-runtime-deps.lock -prune -exec rm -rf {} +"
+
+# OpenClaw 2026.4 can scan bundled provider plugins during gateway/agent
+# startup before the demo's disabled plugin config has short-circuited every
+# path. Seed dependency sentinels in the external runtime-deps cache so those
+# scans do not spend minutes in npm for extensions this demo never activates.
+log "seeding disabled bundled plugin runtime dependency sentinels"
+kexec bash -lc "PLUGIN_RUNTIME_DEPS='$PLUGIN_RUNTIME_DEPS' python3 - <<'PY'
+import hashlib
+import json
+import os
+import re
+from pathlib import Path
+
+package_root = Path('/usr/local/lib/node_modules/openclaw').resolve()
+extensions_dir = package_root / 'dist' / 'extensions'
+if not extensions_dir.exists():
+    raise SystemExit(0)
+
+version = 'unknown'
+try:
+    version = json.loads((package_root / 'package.json').read_text()).get('version') or version
+except OSError:
+    pass
+package_key = 'openclaw-{}-{}'.format(
+    re.sub(r'[^A-Za-z0-9._-]+', '-', version).strip('-') or 'unknown',
+    hashlib.sha256(str(package_root).encode()).hexdigest()[:12],
+)
+install_root = Path(os.environ['PLUGIN_RUNTIME_DEPS']) / package_key
+node_modules = install_root / 'node_modules'
+node_modules.mkdir(parents=True, exist_ok=True)
+
+def normalized_version(spec):
+    spec = str(spec).strip()
+    if not spec or spec.lower().startswith('workspace:'):
+        return None
+    if spec[0] in '^~':
+        spec = spec[1:]
+    return spec if re.match(r'^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$', spec) else None
+
+deps = {}
+for package_json in extensions_dir.glob('*/package.json'):
+    try:
+        data = json.loads(package_json.read_text())
+    except (OSError, json.JSONDecodeError):
+        continue
+    for name, raw_spec in (data.get('dependencies') or {}).items():
+        version = normalized_version(raw_spec)
+        if version:
+            deps[name] = version
+
+index_js = '''export default {};
+export class BedrockClient { async send() { return {}; } }
+export class BedrockRuntimeClient { async send() { return {}; } }
+export class GetInferenceProfileCommand { constructor(input) { this.input = input; } }
+export class ListFoundationModelsCommand { constructor(input) { this.input = input; } }
+export class ListInferenceProfilesCommand { constructor(input) { this.input = input; } }
+'''
+
+for name, version in sorted(deps.items()):
+    package_dir = node_modules.joinpath(*name.split('/'))
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / 'package.json').write_text(json.dumps({
+        'name': name,
+        'version': version,
+        'type': 'module',
+        'exports': './index.js',
+    }, indent=2) + '\\n')
+    (package_dir / 'index.js').write_text(index_js)
+
+(install_root / '.openclaw-runtime-deps.json').write_text(json.dumps({
+    'specs': sorted(f'{name}@{version}' for name, version in deps.items())
+}, indent=2) + '\\n')
+print(f'seeded {len(deps)} bundled runtime dependency sentinels in {install_root}')
+PY
+chown -R sandbox:sandbox '$PLUGIN_RUNTIME_DEPS'"
 
 # 4. Write the per-agent auth profile in the OpenClaw 2026.4 auth-profile format.
 log "writing vision-operator auth profile"
@@ -240,6 +396,22 @@ import os
 cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
 providers = cfg["models"]["providers"]
 agents = {agent["id"]: agent for agent in cfg["agents"]["list"]}
+unused_plugins = [
+    "acpx", "alibaba", "amazon-bedrock", "amazon-bedrock-mantle",
+    "anthropic", "anthropic-vertex", "arcee", "bonjour", "browser",
+    "byteplus", "chutes", "cloudflare-ai-gateway", "codex", "comfy",
+    "copilot-proxy", "deepgram", "deepseek", "device-pair", "document-extract",
+    "elevenlabs", "fal", "fireworks", "github-copilot", "google",
+    "groq", "huggingface", "kilocode", "kimi", "litellm", "lmstudio",
+    "memory-core", "microsoft", "microsoft-foundry", "minimax", "mistral", "moonshot",
+    "ollama", "openai", "opencode", "opencode-go", "openrouter", "nvidia",
+    "phone-control",
+    "qianfan", "qqbot", "qwen", "runway", "sglang", "stepfun",
+    "synthetic", "talk-voice", "tencent", "together", "venice", "vercel-ai-gateway",
+    "vllm", "volcengine", "voyage", "vydra", "web-readability", "xai",
+    "xiaomi", "zai",
+]
+plugin_entries = cfg.get("plugins", {}).get("entries", {})
 checks = {
     "provider nvidia-omni": "nvidia-omni" in providers,
     "provider apiKey": providers.get("nvidia-omni", {}).get("apiKey", "").startswith("nvapi-"),
@@ -253,6 +425,10 @@ checks = {
     "tools": os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"),
     "auth data": os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"),
     "auth active": os.path.exists("/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json"),
+    "plugin deps": os.path.islink("/sandbox/.openclaw/plugin-runtime-deps") or os.path.isdir("/sandbox/.openclaw/plugin-runtime-deps"),
+    "plugins globally disabled": cfg.get("plugins", {}).get("enabled") is False,
+    "memory plugin slot disabled": cfg.get("plugins", {}).get("slots", {}).get("memory") == "none",
+    "unused plugins disabled": all(plugin_entries.get(plugin_id, {}).get("enabled") is False for plugin_id in unused_plugins),
 }
 for name, ok in checks.items():
     print(f"{name}: {ok}")

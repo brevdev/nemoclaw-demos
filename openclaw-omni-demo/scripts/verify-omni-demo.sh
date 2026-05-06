@@ -10,7 +10,8 @@ SANDBOX="${SANDBOX:-hclaw}"
 DOCKER_CTR="${DOCKER_CTR:-openshell-cluster-nemoclaw}"
 WORKSPACE="/sandbox/.openclaw-data/workspace"
 DIRECT_RETRIES="${DIRECT_RETRIES:-2}"
-DELEGATION_WAIT_SECONDS="${DELEGATION_WAIT_SECONDS:-120}"
+DIRECT_TIMEOUT_SECONDS="${DIRECT_TIMEOUT_SECONDS:-180}"
+DELEGATION_WAIT_SECONDS="${DELEGATION_WAIT_SECONDS:-180}"
 
 log() { printf '[omni-demo] %s\n' "$*"; }
 fail() {
@@ -36,7 +37,7 @@ sandbox_exec() {
 }
 
 run_agent() {
-    sandbox_exec bash -lc "source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; $*"
+    sandbox_exec bash -lc "source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; $*"
 }
 
 assert_contains_red() {
@@ -58,6 +59,22 @@ import os
 cfg = json.load(open("/sandbox/.openclaw/openclaw.json"))
 providers = cfg["models"]["providers"]
 agents = {agent["id"]: agent for agent in cfg["agents"]["list"]}
+unused_plugins = [
+    "acpx", "alibaba", "amazon-bedrock", "amazon-bedrock-mantle",
+    "anthropic", "anthropic-vertex", "arcee", "bonjour", "browser",
+    "byteplus", "chutes", "cloudflare-ai-gateway", "codex", "comfy",
+    "copilot-proxy", "deepgram", "deepseek", "device-pair", "document-extract",
+    "elevenlabs", "fal", "fireworks", "github-copilot", "google",
+    "groq", "huggingface", "kilocode", "kimi", "litellm", "lmstudio",
+    "memory-core", "microsoft", "microsoft-foundry", "minimax", "mistral", "moonshot",
+    "ollama", "openai", "opencode", "opencode-go", "openrouter", "nvidia",
+    "phone-control",
+    "qianfan", "qqbot", "qwen", "runway", "sglang", "stepfun",
+    "synthetic", "talk-voice", "tencent", "together", "venice", "vercel-ai-gateway",
+    "vllm", "volcengine", "voyage", "vydra", "web-readability", "xai",
+    "xiaomi", "zai",
+]
+plugin_entries = cfg.get("plugins", {}).get("entries", {})
 checks = {
     "provider nvidia-omni": "nvidia-omni" in providers,
     "provider apiKey": providers.get("nvidia-omni", {}).get("apiKey", "").startswith("nvapi-"),
@@ -70,6 +87,10 @@ checks = {
     "tools": os.path.exists("/sandbox/.openclaw-data/workspace/TOOLS.md"),
     "auth data": os.path.exists("/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json"),
     "auth active": os.path.exists("/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json"),
+    "plugin deps": os.path.islink("/sandbox/.openclaw/plugin-runtime-deps") or os.path.isdir("/sandbox/.openclaw/plugin-runtime-deps"),
+    "plugins globally disabled": cfg.get("plugins", {}).get("enabled") is False,
+    "memory plugin slot disabled": cfg.get("plugins", {}).get("slots", {}).get("memory") == "none",
+    "unused plugins disabled": all(plugin_entries.get(plugin_id, {}).get("enabled") is False for plugin_id in unused_plugins),
 }
 for name, ok in checks.items():
     print(f"{name}: {ok}")
@@ -79,7 +100,11 @@ if failed:
 PY'
 
 log "checking agent registry"
-agents_output="$(sandbox_exec bash -lc 'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; openclaw agents list')"
+agents_output="$(sandbox_exec bash -lc 'source /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true; export OPENCLAW_TEST_ONLY_PROVIDER_PLUGIN_IDS=nvidia; openclaw agents list')"
+if grep -q '\[plugins\].*staging bundled runtime deps' <<<"$agents_output"; then
+    printf '%s\n' "$agents_output" >&2
+    fail "openclaw agents list staged unrelated plugin runtime deps; re-run scripts/apply-omni-subagent.sh"
+fi
 grep -q 'vision-operator' <<<"$agents_output" || fail "openclaw agents list did not include vision-operator"
 grep -q 'nvidia-omni' <<<"$agents_output" || fail "openclaw agents list did not include nvidia-omni model"
 
@@ -128,7 +153,16 @@ grep -q 'status=200' <<<"$provider_probe" || {
 }
 
 log "checking gateway connectivity"
-gateway_output="$(run_agent 'openclaw gateway status')"
+gateway_output="$(sandbox_exec python3 - <<'PY'
+import socket
+try:
+    with socket.create_connection(("127.0.0.1", 18789), timeout=5):
+        print("Connectivity probe: ok")
+except OSError as exc:
+    print(f"Connectivity probe: failed ({exc})")
+    raise SystemExit(1)
+PY
+)"
 grep -q 'Connectivity probe: ok' <<<"$gateway_output" || {
     printf '%s\n' "$gateway_output" >&2
     fail "gateway connectivity probe did not pass"
@@ -156,7 +190,7 @@ direct_output=""
 direct_passed=0
 for attempt in $(seq 1 "$DIRECT_RETRIES"); do
     session_id="direct-vision-smoke-$(date +%s)-$attempt"
-    if direct_output="$(run_agent "openclaw agent --agent vision-operator --thinking off --message 'Use the image tool to inspect $WORKSPACE/red.png. Return exactly one sentence describing the image. /no_think' --session-id $session_id --timeout 300" 2>&1)"; then
+    if direct_output="$(run_agent "timeout $DIRECT_TIMEOUT_SECONDS openclaw agent --json --agent vision-operator --thinking off --message 'Use the image tool to inspect $WORKSPACE/red.png. Retry the image tool once if it returns Request was aborted or Image failed. Return exactly one sentence describing the image. /no_think' --session-id $session_id --timeout $DIRECT_TIMEOUT_SECONDS" 2>&1)"; then
         if grep -Eiq 'red|solid' <<<"$direct_output"; then
             direct_passed=1
             break
@@ -172,7 +206,7 @@ assert_contains_red "direct vision output" "$direct_output"
 
 log "running main-agent delegation test"
 kexec rm -f "$WORKSPACE/image-description.md"
-delegation_output="$(run_agent "openclaw agent --agent main --thinking off --message 'Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn. In the sub-agent message, tell it: Use the image tool to inspect $WORKSPACE/red.png, return exactly one sentence describing it, use --thinking off behavior if available, and include /no_think. Write the final one-sentence description to $WORKSPACE/image-description.md and tell me what you wrote.' --session-id main-vision-delegation-smoke-$(date +%s) --timeout 420" 2>&1 || true)"
+delegation_output="$(run_agent "openclaw agent --agent main --thinking off --message 'Use agents_list to confirm vision-operator is available, then delegate to vision-operator with sessions_spawn. In the sub-agent message, tell it: Use the image tool to inspect $WORKSPACE/red.png, retry the image tool once if it returns Request was aborted or Image failed, return exactly one sentence describing it, use --thinking off behavior if available, and include /no_think. Write the final one-sentence description to $WORKSPACE/image-description.md and tell me what you wrote.' --session-id main-vision-delegation-smoke-$(date +%s) --timeout 420" 2>&1 || true)"
 log "$delegation_output"
 
 description=""
