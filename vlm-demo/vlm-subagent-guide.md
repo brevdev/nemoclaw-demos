@@ -444,6 +444,6 @@ nemoclaw onboard
 # Repeat Parts 3–8
 ```
 
-## Based On
+## See Also
 
-This guide is based on [Haran Kumar's nemoclaw-with-omni-subagent](https://gitlab-master.nvidia.com/hshivkumar/nemoclaw-with-omni-subagent/-/tree/main?ref_type=heads), adapted into a zero-to-hero cookbook format.
+- [**openclaw-omni-demo**](../openclaw-omni-demo/README.md) — Compact reference for the same setup with raw config files (`openclaw.json`, `policy.yaml`, `TOOLS.md`), overlay-mount instructions, and detailed log-parsing examples. Originally from [Haran Kumar's repo](https://gitlab-master.nvidia.com/hshivkumar/nemoclaw-with-omni-subagent).

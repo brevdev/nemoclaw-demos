@@ -1,0 +1,100 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Catches the cookbook-runtime path drift class of bug.
+#
+# The VDR review found a case where the cookbook prose said one sandbox
+# directory while the setup.sh script wrote files to a different one,
+# producing a half-broken state with green checks. This workflow grep's
+# every sandbox path mentioned in the prose and confirms the same path
+# is referenced in at least one of: setup.sh, start.sh, server.py, or
+# the SKILL.md/SOUL.md files. If the prose has drifted from the runtime,
+# CI fails.
+name: hermes-omni-demo path consistency
+
+on:
+  pull_request:
+    paths:
+      - "hermes-omni-demo/**"
+      - ".github/workflows/hermes-omni-demo-paths.yml"
+  push:
+    branches: [main]
+    paths:
+      - "hermes-omni-demo/**"
+      - ".github/workflows/hermes-omni-demo-paths.yml"
+
+jobs:
+  path-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract sandbox paths from cookbook prose
+        id: prose_paths
+        run: |
+          set -euo pipefail
+          # Pull every /sandbox/... path mentioned in the guide, dedupe.
+          grep -oE '/sandbox/[A-Za-z0-9_./-]+' \
+            hermes-omni-demo/hermes-omni-guide.md \
+            | sort -u > /tmp/prose_paths.txt
+          echo "Paths referenced in cookbook prose:"
+          cat /tmp/prose_paths.txt
+          echo
+
+      - name: Confirm each path exists in the runtime sources
+        run: |
+          set -euo pipefail
+          # Files that are the source of truth for what the runtime
+          # actually does with these paths.
+          RUNTIME_FILES=(
+            hermes-omni-demo/scripts/setup.sh
+            hermes-omni-demo/scripts/start.sh
+            hermes-omni-demo/scripts/stop.sh
+            hermes-omni-demo/scripts/chunk-upload.sh
+            hermes-omni-demo/scripts/pdf-upload.sh
+            hermes-omni-demo/scripts/omni-video-analyze.py
+            hermes-omni-demo/scripts/lookup-jargon.py
+            hermes-omni-demo/server/server.py
+            hermes-omni-demo/skills/video-analyze/SKILL.md
+            hermes-omni-demo/skills/jargon-lookup/SKILL.md
+            hermes-omni-demo/memories/SOUL.md
+          )
+
+          missing=0
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            # Strip a trailing slash so /sandbox/.hermes-data/ matches
+            # /sandbox/.hermes-data/ in the source too.
+            stripped="${path%/}"
+            # The path is OK if any runtime file mentions it (with or
+            # without a trailing slash).
+            if grep -qFr -e "$stripped" -e "${stripped}/" "${RUNTIME_FILES[@]}" 2>/dev/null; then
+              echo "✓ $path"
+            else
+              echo "✗ $path  ← in cookbook prose, not in any runtime source"
+              missing=$((missing + 1))
+            fi
+          done < /tmp/prose_paths.txt
+
+          if [ "$missing" -gt 0 ]; then
+            echo
+            echo "Cookbook prose references $missing sandbox path(s) that are not present"
+            echo "in any of setup.sh, start.sh, server.py, or the skill/SOUL files."
+            echo "Either the prose is stale, or the runtime moved without doc updates."
+            exit 1
+          fi
+
+      - name: Confirm setup.sh's SOUL.md upload paths match what Hermes reads
+        run: |
+          set -euo pipefail
+          # Hermes resolves SOUL.md from /sandbox/.hermes/SOUL.md, which
+          # in current sandbox images is a symlink to
+          # /sandbox/.hermes-data/memories/SOUL.md. Make sure setup.sh
+          # uploads to the symlink target so Hermes actually sees it.
+          if ! grep -q "/sandbox/.hermes-data/memories/" hermes-omni-demo/scripts/setup.sh; then
+            echo "✗ setup.sh does NOT upload SOUL.md to /sandbox/.hermes-data/memories/"
+            echo "  This was the VDR's headline finding — Hermes reads from"
+            echo "  /sandbox/.hermes/SOUL.md (symlinked to memories/SOUL.md)."
+            exit 1
+          fi
+          echo "✓ setup.sh uploads SOUL.md to the symlink-target path Hermes reads"
