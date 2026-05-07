@@ -62,6 +62,9 @@ This is the condensed version of the full walkthrough below. Skip step 1 if Nemo
 
 ```bash
 # 1. install the NemoClaw + OpenShell CLIs
+# The installer ends with an interactive `nemoclaw onboard` for a default
+# sandbox. When it asks for an inference provider, choose [1] NVIDIA Endpoints.
+# (Step 3 below runs onboard again with --agent hermes for the Hermes sandbox.)
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash && source ~/.bashrc
 
 # 2. clone this cookbook
