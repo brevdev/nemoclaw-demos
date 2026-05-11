@@ -1,0 +1,9 @@
+slot_id,service_line,location,start_time,duration_minutes,clinician,visit_type
+S-2001,Cardiology,Downtown,2026-05-04T14:00:00-04:00,30,Dr Rao,urgent_followup
+S-2002,Oncology,Downtown,2026-05-04T15:00:00-04:00,45,Dr Silva,new_patient
+S-2003,Primary Care,East Clinic,2026-05-05T09:00:00-04:00,30,NP Carter,urgent_followup
+S-2004,Neurology,Northside,2026-05-05T10:30:00-04:00,45,Dr Morgan,new_patient
+S-2005,Cardiology,Downtown,2026-05-05T11:00:00-04:00,30,Dr Rao,urgent_followup
+S-2006,Endocrinology,East Clinic,2026-05-05T13:00:00-04:00,30,Dr Chen,medication_access
+S-2007,Orthopedics,Northside,2026-05-06T09:30:00-04:00,30,PA Lewis,followup
+S-2008,Gastroenterology,Downtown,2026-05-06T11:00:00-04:00,30,Dr Ahmed,screening_followup

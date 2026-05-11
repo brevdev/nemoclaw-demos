@@ -15,6 +15,7 @@ A repository of guides with examples you can take after a successful [hello-worl
 | [**planet-integration-demo**](planet-integration-demo/planet-integration-guide.md) | Planet satellite imagery catalog, tasking cost estimation, and satellite pass availability with Tier 1 proxy security. |
 | [**wakeup-demo**](wakeup-demo/nemoclaw-wakeup-guide.md) | Host-controlled scheduled wakeup for periodic agent tasks (email checks, calendar, etc.) with sandbox security enforcement. |
 | [**nasa-apod-demo**](nasa-apod-demo/nasa-apod-guide.md) | NASA Astronomy Picture of the Day |
+| [**healthcare-monitor-demo**](healthcare-monitor-demo/README.md) | Healthcare care-backlog monitoring demo with multi-agent routing, triage, capacity planning, payer audit, and policy-controlled sandbox setup. |
 | [**hermes-omni-demo**](hermes-omni-demo/hermes-omni-guide.md) | Zero-to-hero cookbook for a multimodal agent: Hermes + Nemotron 3 Nano Omni + NemoClaw policy. Video (short + chunked long), audio, PDF, image, and Wikipedia lookups behind a deny-by-default L7 proxy — plus an optional React + FastAPI web UI for live demos. No GPU required. |
 
 ## Official Resources

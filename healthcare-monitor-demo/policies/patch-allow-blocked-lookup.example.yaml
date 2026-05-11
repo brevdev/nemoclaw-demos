@@ -1,0 +1,14 @@
+preset:
+  name: healthcare-monitor-temporary-example-org
+  description: Temporary allow rule for the blocked lookup
+
+network_policies:
+  healthcare-monitor-temporary-example-org:
+    name: healthcare-monitor-temporary-example-org
+    endpoints:
+      - host: example.org
+        port: 443
+        access: full
+    binaries:
+      - { path: /usr/bin/python3 }
+      - { path: /usr/local/bin/python3 }

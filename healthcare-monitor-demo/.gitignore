@@ -1,0 +1,10 @@
+.env
+*.tgz
+*.zip
+__pycache__/
+*.pyc
+demo-app/state/
+outputs/
+tmp/
+docs/DEPLOY-NOTES.md
+*.plan.md

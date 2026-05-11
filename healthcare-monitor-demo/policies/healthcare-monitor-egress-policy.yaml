@@ -1,0 +1,20 @@
+preset:
+  name: healthcare-monitor-local
+  description: Healthcare monitor local-only network policy
+
+network_policies:
+  healthcare-monitor-local:
+    name: healthcare-monitor-local
+    endpoints:
+      - host: localhost
+        port: 5188
+        access: full
+      - host: 127.0.0.1
+        port: 5188
+        access: full
+    binaries:
+      - { path: /usr/bin/python3 }
+      - { path: /usr/local/bin/python3 }
+      - { path: /usr/bin/curl }
+      - { path: /usr/local/bin/curl }
+      - { path: /usr/local/bin/node }

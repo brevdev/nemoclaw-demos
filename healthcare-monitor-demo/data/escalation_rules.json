@@ -1,0 +1,8 @@
+{
+  "critical_flags": ["chest_pain", "possible_malignancy", "shortness_of_breath"],
+  "high_flags": ["recent_discharge", "falls", "elderly", "respiratory_symptoms"],
+  "medium_flags": ["positive_screen", "medication_gap", "mobility_decline"],
+  "default_priority": "routine",
+  "audit_required_for": ["critical", "high"],
+  "blocked_lookup_url": "https://example.org/healthcare-monitor-blocked-lookup"
+}

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "healthcare-monitor-watch-001",
+      "agentId": "main",
+      "sessionKey": "agent:main:healthcare-monitor-watch",
+      "name": "Healthcare Monitor Watch",
+      "description": "Every hour, review synthetic backlog urgency, capacity gaps, prior-authorization flags, and produce an operations watch summary.",
+      "enabled": true,
+      "createdAtMs": 1777896000000,
+      "updatedAtMs": 1777896000000,
+      "schedule": {
+        "kind": "every",
+        "everyMs": 3600000,
+        "anchorMs": 1777896000000
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "You are running the scheduled Healthcare Monitor Watch. Use only synthetic example data from /sandbox/.openclaw/workspace/data and the sandbox-local analyzer script. Run: python3 /sandbox/.openclaw/workspace/scripts/care_backlog_analyzer.py watch-summary\n\nThen produce a concise command-center update with these sections:\n- Current backlog signal\n- Critical/high referrals needing action\n- Capacity gaps\n- Prior-auth or audit flags\n- NemoClaw/OpenShell governance note\n\nRules:\n- Do not provide medical advice.\n- Do not use real patient data.\n- Do not make external network calls.\n- Do not run the intentional blocked-lookup command from cron.\n- Keep the update suitable for a healthcare operations review.",
+        "timeoutSeconds": 240
+      },
+      "delivery": {
+        "mode": "store"
+      },
+      "state": {
+        "nextRunAtMs": 1777899600000
+      }
+    }
+  ]
+}

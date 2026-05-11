@@ -1,0 +1,10 @@
+{
+  "R-1001": "Discharged two days ago after observation stay. Reports intermittent chest tightness. No real PHI in this example.",
+  "R-1002": "Progressive knee pain with reduced mobility. Imaging available in synthetic chart extract.",
+  "R-1003": "Abnormal imaging result flagged by referring clinic. Needs oncology intake review.",
+  "R-1004": "Increased rescue inhaler use. No severe distress documented in synthetic note.",
+  "R-1005": "Family reports two recent falls and memory changes. Needs safety-oriented review.",
+  "R-1006": "Unable to fill diabetes medication due to formulary change. Needs access intervention.",
+  "R-1007": "Positive screening result. Patient prefers Downtown location.",
+  "R-1008": "Shortness of breath with cardiology history. Requires rapid clinical triage."
+}

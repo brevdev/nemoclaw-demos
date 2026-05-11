@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Healthcare Monitor Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="rail" aria-label="Healthcare monitor workflow">
+        <div>
+          <p class="eyebrow">NemoClaw + OpenShell</p>
+          <h1>Healthcare Monitor Demo</h1>
+          <p class="intro">
+            A guided front end for the image-baked multi-agent healthcare example.
+            Inspect the runtime, deployment pattern, specialist agents, local evidence,
+            and governance controls from one screen.
+          </p>
+        </div>
+
+        <section class="runtime-panel" aria-label="Runtime configuration">
+          <div class="metric">
+            <span>Sandbox</span>
+            <strong id="sandboxName">loading</strong>
+          </div>
+          <div class="metric">
+            <span>Model</span>
+            <strong id="modelName">loading</strong>
+          </div>
+          <div class="metric">
+            <span>Provider</span>
+            <strong id="providerName">loading</strong>
+          </div>
+        </section>
+
+        <nav class="steps" aria-label="Walkthrough steps">
+          <button class="step active" data-step="health">
+            <span>01</span>
+            Runtime
+          </button>
+          <button class="step" data-step="topology">
+            <span>02</span>
+            Architecture
+          </button>
+          <button class="step" data-step="evidence">
+            <span>03</span>
+            Evidence
+          </button>
+          <button class="step" data-step="dashboard">
+            <span>04</span>
+            Operations
+          </button>
+          <button class="step" data-step="egress">
+            <span>05</span>
+            Governance
+          </button>
+        </nav>
+      </aside>
+
+      <section class="workbench">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Live Walkthrough</p>
+            <h2 id="sectionTitle">Runtime</h2>
+            <p class="section-summary" id="sectionSummary">
+              Confirm the image-baked runtime, policy, skills, and gateway are ready before running the agent workflow.
+            </p>
+          </div>
+          <div class="status-chip" id="lastStatus">Ready</div>
+        </header>
+
+        <section class="visual-strip" aria-label="Workflow overview">
+          <div class="signal-card critical">
+            <span>Critical</span>
+            <strong id="criticalCount">3</strong>
+          </div>
+          <div class="signal-card high">
+            <span>High</span>
+            <strong id="highCount">2</strong>
+          </div>
+          <div class="signal-card scheduled">
+            <span>Scheduled</span>
+            <strong id="scheduledCount">8</strong>
+          </div>
+          <div class="signal-card gaps">
+            <span>Capacity Gaps</span>
+            <strong id="gapCount">0</strong>
+          </div>
+          <div class="route-map" aria-hidden="true">
+            <div class="node active">Intake</div>
+            <div class="node active">Triage</div>
+            <div class="node active">Capacity</div>
+            <div class="node active">Audit</div>
+          </div>
+        </section>
+
+        <section class="stage active" id="health">
+          <div class="action-bar">
+            <button data-action="runtime-status">Run NemoClaw Status</button>
+            <button data-action="probe">Probe OpenClaw Gateway</button>
+            <button data-action="policy-list">Show Policy Presets</button>
+            <button data-action="apply-demo-policy">Apply Local Policy</button>
+            <button data-action="verify-runtime">Verify Runtime Kit</button>
+            <button data-action="upload">Show Sandbox Config</button>
+          </div>
+          <p class="action-hint">Run an action here and the result will open in the Command Output panel below.</p>
+          <div class="two-column">
+            <article>
+              <h3>Runtime Evidence</h3>
+              <p>
+                This proves the runtime is already live: sandbox ready, routed
+                inference healthy, and OpenClaw available inside the custom sandbox.
+              </p>
+            </article>
+            <article>
+              <h3>Success Signal</h3>
+              <p>
+                Look for <code>Phase: Ready</code>, <code>Inference: healthy</code>,
+                and <code>OpenClaw: running</code>.
+              </p>
+            </article>
+          </div>
+          <section class="policy-panel" aria-label="Local network policy summary">
+            <div class="panel-heading">
+              <div>
+                <h3>Local Policy Summary</h3>
+                <p id="policyNote">Loading policy summary...</p>
+              </div>
+            </div>
+            <div class="policy-grid">
+              <article>
+                <h3>Allowed Local Endpoints</h3>
+                <div id="policyEndpoints">Loading...</div>
+              </article>
+              <article>
+                <h3>Allowed Binaries</h3>
+                <div id="policyBinaries">Loading...</div>
+              </article>
+            </div>
+          </section>
+        </section>
+
+        <section class="stage" id="topology">
+          <div class="topology-detail-grid">
+            <section class="topology-panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>How Deployment Works</h3>
+                  <p>The sandbox is rebuilt from a Dockerfile, then locked down by OpenShell at runtime.</p>
+                </div>
+              </div>
+              <ol class="flow-list" id="deploymentFlow">
+                <li>Loading deployment flow...</li>
+              </ol>
+            </section>
+            <section class="topology-panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>How Delegation Works</h3>
+                  <p>Main spawns leaf agents; leaf agents execute the shared Python CLI for their bounded slice.</p>
+                </div>
+              </div>
+              <ol class="flow-list" id="topologyFlow">
+                <li>Loading flow...</li>
+              </ol>
+            </section>
+          </div>
+          <div class="topology-map" aria-label="Agent delegation topology">
+            <article class="agent-card coordinator" data-agent-id="main">
+              <span>Main</span>
+              <strong>Coordinator</strong>
+              <p><code>agents_list</code> + <code>sessions_spawn</code></p>
+            </article>
+            <div class="leaf-grid" id="topologyAgents">
+              <article class="agent-card">Loading agents...</article>
+            </div>
+          </div>
+          <div class="two-column">
+            <article>
+              <h3>OpenClaw-Native Layout</h3>
+              <p>
+                The sandbox image contains <code>openclaw.json</code>, shared
+                skills, per-agent workspaces, synthetic data, local tools, and
+                the scheduled watch job before runtime lock-down.
+              </p>
+            </article>
+            <article>
+              <h3>Least Privilege</h3>
+              <p>
+                Only <code>main</code> can spawn specialists. Specialists are
+                leaf agents with read/exec access to local analyzer commands.
+              </p>
+            </article>
+          </div>
+          <div class="topology-file-grid">
+            <section class="topology-panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>Clickable Files</h3>
+                  <p>Open config, Docker build, policy, prompts, skills, and the deterministic analyzer used by the agents.</p>
+                </div>
+              </div>
+              <div class="file-pills" id="topologyFiles">
+                <button disabled>Loading files...</button>
+              </div>
+            </section>
+            <section class="topology-panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>File Viewer</h3>
+                  <p>Click a file on the left and its contents appear here immediately.</p>
+                </div>
+              </div>
+              <div class="file-viewer inline-viewer" id="topologyFileViewer" hidden>
+                <div class="output-header">
+                  <div>
+                    <p class="eyebrow">Topology File</p>
+                    <h3 id="topologyFileTitle">No file selected</h3>
+                  </div>
+                </div>
+                <pre id="topologyFileContent"></pre>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="stage" id="evidence">
+          <div class="evidence-output-grid">
+            <section class="topology-panel evidence-action-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Local Tool Evidence</p>
+                  <h3>Deterministic Specialist Tools</h3>
+                  <p>The specialists are grounded by local files and Python commands, not free-floating reasoning.</p>
+                </div>
+                <button id="refreshEvidence" type="button">Refresh Evidence</button>
+              </div>
+              <div class="action-bar compact-actions evidence-actions">
+                <button data-action="intake">Run Intake Tool</button>
+                <button data-action="triage">Run Triage Tool</button>
+                <button data-action="schedule">Run Capacity Tool</button>
+                <button data-action="audit">Run Audit Tool</button>
+                <button data-action="watch-summary">Run Watch Summary</button>
+                <button data-action="report">Run 48-Hour Report</button>
+              </div>
+              <p class="action-hint">These tool runs write into the Command Output panel beside this section.</p>
+              <div class="logic-grid evidence-logic-grid" id="toolLogic"></div>
+              <div class="tool-explain-grid compact" aria-label="Tool explanations">
+                <article>
+                  <h3>Intake / Triage</h3>
+                  <p>Normalize the referral queue, then rank urgency from local escalation rules and note summaries.</p>
+                </article>
+                <article>
+                  <h3>Capacity / Audit</h3>
+                  <p>Match prioritized referrals to slots, then apply payer prior-auth and audit rules before action.</p>
+                </article>
+              </div>
+            </section>
+            <div id="evidenceOutputMount" class="output-mount"></div>
+          </div>
+
+          <section class="topology-panel raw-data-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Raw Synthetic Data</p>
+                <h3>Files Behind The Evidence</h3>
+                <p>These local example files are the direct inputs to the deterministic Python workflows and agent evidence chain.</p>
+              </div>
+            </div>
+            <div class="evidence-tabs" role="tablist" aria-label="Evidence file tabs">
+              <button class="active" data-evidence-tab="referrals" type="button">Referrals</button>
+              <button data-evidence-tab="notes" type="button">Notes</button>
+              <button data-evidence-tab="capacity" type="button">Clinic Slots</button>
+              <button data-evidence-tab="rules" type="button">Rules</button>
+              <button data-evidence-tab="payers" type="button">Payers</button>
+            </div>
+            <div class="evidence-table-wrap">
+              <table class="evidence-table">
+                <thead id="evidenceHead"></thead>
+                <tbody id="evidenceBody">
+                  <tr>
+                    <td>Loading evidence...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="stage" id="dashboard">
+          <div class="dashboard-header">
+            <div>
+              <h3>Operator Decision Queue</h3>
+              <p>
+                Decisions below are saved locally and reflected immediately in
+                this dashboard. The local analyzer turns intake, triage,
+                capacity, audit, and policy context into decision support for
+                the operator.
+              </p>
+            </div>
+          </div>
+          <div class="value-grid" aria-label="Decision support value for operators">
+            <article>
+              <h3>Evidence-Grounded</h3>
+              <p>Every recommendation can cite intake, triage, capacity, and audit tool output.</p>
+            </article>
+            <article>
+              <h3>Decision-Aware</h3>
+              <p>Operator choices update locally and become context for the next decision-support analysis.</p>
+            </article>
+            <article>
+              <h3>Policy-Visible</h3>
+              <p>External lookup attempts stay observable through OpenShell policy controls.</p>
+            </article>
+          </div>
+          <div class="decision-guide" aria-label="Operator decision guide">
+            <article>
+              <h3>Expedite</h3>
+              <p>Use when the priority and slot evidence support rapid scheduling action.</p>
+            </article>
+            <article>
+              <h3>Auth Hold</h3>
+              <p>Use when the next operational step depends on prior authorization or payer review.</p>
+            </article>
+            <article>
+              <h3>Review</h3>
+              <p>Use when the case needs manual command-center review before committing action.</p>
+            </article>
+          </div>
+          <div class="monitor-grid" aria-label="Operational monitors">
+            <article class="monitor-card">
+              <h3>Intake Monitor</h3>
+              <strong id="intakeTotal">0</strong>
+              <span>synthetic referrals loaded</span>
+              <p id="intakeSignal">Waiting for queue data...</p>
+            </article>
+            <article class="monitor-card">
+              <h3>Triage Monitor</h3>
+              <strong id="triageSignal">0 critical/high</strong>
+              <span>risk-ranked by local rules</span>
+              <p id="triageDrivers">Waiting for triage drivers...</p>
+            </article>
+            <article class="monitor-card">
+              <h3>Capacity Monitor</h3>
+              <strong id="capacitySignal">0 scheduled</strong>
+              <span>slot matching status</span>
+              <p id="capacityDetails">Waiting for capacity data...</p>
+            </article>
+            <article class="monitor-card">
+              <h3>Audit Monitor</h3>
+              <strong id="auditSignal">0 flags</strong>
+              <span>prior auth and audit controls</span>
+              <p id="auditDetails">Waiting for audit data...</p>
+            </article>
+          </div>
+          <div class="dashboard-grid">
+            <section class="queue-panel" aria-label="Referral decision queue">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Referral</th>
+                      <th>Priority</th>
+                      <th>Service</th>
+                      <th>Slot</th>
+                      <th>Audit</th>
+                      <th>Operator Decision</th>
+                    </tr>
+                  </thead>
+                  <tbody id="referralRows">
+                    <tr>
+                      <td colspan="6">Loading queue...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <aside class="monitor-panel" aria-label="Continuous file monitor">
+              <h3>Continuous File Monitor</h3>
+              <p id="dashboardUpdated">Waiting for data...</p>
+              <div id="fileWatch" class="file-watch"></div>
+            </aside>
+          </div>
+          <div class="action-bar compact-actions section-output-actions">
+            <button data-action="operator-analysis">Analyze Decisions</button>
+            <button data-action="agent-plan">Run Multi-Agent Plan</button>
+          </div>
+          <p class="action-hint">These actions summarize into the Command Output panel below and the page will jump there when they finish.</p>
+        </section>
+
+        <section class="stage" id="egress">
+          <div class="action-bar">
+            <button data-action="blocked-lookup">Run Blocked Lookup</button>
+            <button data-action="agent-egress">Run Egress Explanation</button>
+            <button data-action="cron">Show Watch Job</button>
+            <button data-action="manual-watch">Run Manual Watch</button>
+          </div>
+          <p class="action-hint">Governance actions also write into the Command Output panel below.</p>
+          <div class="two-column">
+            <article>
+              <h3>Governance Signal</h3>
+              <p>
+                This is the governance moment. The code tries an ordinary HTTPS
+                lookup, but the endpoint is outside the approved policy.
+              </p>
+              <p>
+                Intentional test target:
+                <code>https://example.org/healthcare-monitor-blocked-lookup</code>
+              </p>
+            </article>
+            <article>
+              <h3>Success Signal</h3>
+              <p>
+                The expected failure is <code>Tunnel connection failed: 403 Forbidden</code>.
+              </p>
+            </article>
+          </div>
+          <div class="dashboard-header">
+            <div>
+              <h3>OpenShell Interactive Terminal</h3>
+              <p>
+                Start the embedded <code>openshell term</code> session here,
+                then trigger the blocked lookup from the same page and watch
+                the policy signal live.
+              </p>
+            </div>
+            <div class="action-bar compact-actions">
+              <button data-action="blocked-lookup">Trigger Blocked Egress</button>
+            </div>
+          </div>
+          <div class="terminal-panel">
+            <div class="terminal-controls">
+              <button id="startTerminal" type="button">Start OpenShell Term</button>
+              <button id="stopTerminal" type="button">Stop</button>
+              <button id="clearTerminal" type="button">Clear</button>
+              <span id="terminalStatus">Terminal idle</span>
+            </div>
+            <pre id="embeddedTerminal" tabindex="0" aria-label="Embedded OpenShell terminal">Click Start OpenShell Term, then click inside this terminal to type.</pre>
+          </div>
+          <div class="two-column">
+            <article>
+              <h3>Operations Monitor</h3>
+              <p>
+                Cron represents recurring operational surveillance. Heartbeat
+                stays light; scheduled work is explicit, bounded, and reviewable.
+              </p>
+            </article>
+            <article>
+              <h3>Success Signal</h3>
+              <p>
+                The job name should be <code>Healthcare Monitor Watch</code> and the
+                payload should run <code>watch-summary</code>.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <div id="globalOutputMount" class="output-mount">
+          <section class="output-panel" aria-label="Command output">
+            <div class="output-header">
+              <div>
+                <p class="eyebrow">Command Output</p>
+                <h3 id="commandTitle">No command run yet</h3>
+                <p class="output-linkage">This panel shows the result of the action buttons above.</p>
+              </div>
+              <button id="clearOutput">Clear</button>
+            </div>
+            <div class="action-explanation" id="actionExplanation" hidden>
+              <h3 id="actionExplanationTitle">Command Context</h3>
+              <p id="actionExplanationText"></p>
+            </div>
+            <pre id="output">Choose a step and run a command.</pre>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

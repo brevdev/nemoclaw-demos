@@ -1,0 +1,9 @@
+referral_id,patient_alias,age,service_line,reason,requested_window_hours,risk_flags,preferred_location,payer,received_at
+R-1001,Patient Alpha,68,Cardiology,post-discharge chest pain follow-up,24,chest_pain|recent_discharge,Downtown,Acme Health,2026-05-04T08:15:00-04:00
+R-1002,Patient Beta,54,Orthopedics,knee MRI review and mobility decline,72,mobility_decline,Northside,National Care,2026-05-04T08:45:00-04:00
+R-1003,Patient Gamma,42,Oncology,new abnormal imaging referral,24,possible_malignancy,Downtown,Acme Health,2026-05-04T09:05:00-04:00
+R-1004,Patient Delta,31,Primary Care,uncontrolled asthma symptoms,48,respiratory_symptoms,East Clinic,Community Plan,2026-05-04T09:25:00-04:00
+R-1005,Patient Epsilon,77,Neurology,new memory loss and falls,48,falls|elderly,Northside,Acme Health,2026-05-04T09:45:00-04:00
+R-1006,Patient Zeta,59,Endocrinology,diabetes medication access issue,72,medication_gap,East Clinic,Community Plan,2026-05-04T10:10:00-04:00
+R-1007,Patient Eta,46,Gastroenterology,positive screening test follow-up,72,positive_screen,Downtown,National Care,2026-05-04T10:40:00-04:00
+R-1008,Patient Theta,63,Cardiology,new shortness of breath,24,shortness_of_breath,Downtown,Acme Health,2026-05-04T11:05:00-04:00

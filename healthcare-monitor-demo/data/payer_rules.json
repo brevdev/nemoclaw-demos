@@ -1,0 +1,17 @@
+{
+  "Acme Health": {
+    "prior_auth_required": ["Oncology", "Neurology"],
+    "expedite_window_hours": 48,
+    "notes": "Expedited scheduling permitted for recent discharge, chest pain, falls, possible malignancy, or shortness of breath."
+  },
+  "National Care": {
+    "prior_auth_required": ["Gastroenterology"],
+    "expedite_window_hours": 72,
+    "notes": "Screening follow-up can be scheduled while documentation review is pending."
+  },
+  "Community Plan": {
+    "prior_auth_required": ["Endocrinology"],
+    "expedite_window_hours": 72,
+    "notes": "Medication access and respiratory symptom cases should include social-support note."
+  }
+}

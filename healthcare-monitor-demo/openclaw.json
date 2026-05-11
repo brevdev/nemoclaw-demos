@@ -1,0 +1,321 @@
+{
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "inference": {
+        "baseUrl": "https://inference.local/v1",
+        "apiKey": "unused",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "__MODEL_ID__",
+            "name": "__MODEL_REF__",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 4096
+          }
+        ]
+      }
+    }
+  },
+  "skills": {
+    "load": {
+      "extraDirs": [
+        "/sandbox/.openclaw/skills"
+      ]
+    }
+  },
+  "tools": {
+    "profile": "minimal",
+    "deny": [
+      "write",
+      "edit",
+      "apply_patch",
+      "browser",
+      "web_search",
+      "x_search",
+      "web_fetch",
+      "message",
+      "gateway",
+      "cron",
+      "nodes",
+      "canvas",
+      "image_generate",
+      "music_generate",
+      "video_generate",
+      "tts"
+    ]
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/sandbox/.openclaw/workspace-main",
+      "model": {
+        "primary": "__MODEL_REF__"
+      },
+      "timeoutSeconds": 300,
+      "skills": [],
+      "subagents": {
+        "allowAgents": [
+          "intake",
+          "clinical-triage",
+          "capacity-planner",
+          "payer-audit",
+          "command-writer"
+        ],
+        "maxSpawnDepth": 1,
+        "maxConcurrent": 5
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "workspace": "/sandbox/.openclaw/workspace-main",
+        "model": {
+          "primary": "__MODEL_REF__"
+        },
+        "skills": [
+          "healthcare-monitor-routing",
+          "healthcare-command-summary",
+          "healthcare-governance-egress"
+        ],
+        "subagents": {
+          "allowAgents": [
+            "intake",
+            "clinical-triage",
+            "capacity-planner",
+            "payer-audit",
+            "command-writer"
+          ]
+        },
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "read",
+            "exec",
+            "process",
+            "session_status",
+            "agents_list",
+            "sessions_spawn",
+            "sessions_yield",
+            "subagents"
+          ]
+        }
+      },
+      {
+        "id": "intake",
+        "workspace": "/sandbox/.openclaw/workspace-intake",
+        "model": {
+          "primary": "__MODEL_REF__"
+        },
+        "skills": [
+          "healthcare-intake-normalization"
+        ],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "read",
+            "exec",
+            "process",
+            "session_status"
+          ],
+          "deny": [
+            "sessions_spawn",
+            "sessions_send",
+            "sessions_yield",
+            "subagents"
+          ]
+        }
+      },
+      {
+        "id": "clinical-triage",
+        "workspace": "/sandbox/.openclaw/workspace-clinical-triage",
+        "model": {
+          "primary": "__MODEL_REF__"
+        },
+        "skills": [
+          "healthcare-clinical-triage"
+        ],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "read",
+            "exec",
+            "process",
+            "session_status"
+          ],
+          "deny": [
+            "sessions_spawn",
+            "sessions_send",
+            "sessions_yield",
+            "subagents"
+          ]
+        }
+      },
+      {
+        "id": "capacity-planner",
+        "workspace": "/sandbox/.openclaw/workspace-capacity-planner",
+        "model": {
+          "primary": "__MODEL_REF__"
+        },
+        "skills": [
+          "healthcare-capacity-planning"
+        ],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "read",
+            "exec",
+            "process",
+            "session_status"
+          ],
+          "deny": [
+            "sessions_spawn",
+            "sessions_send",
+            "sessions_yield",
+            "subagents"
+          ]
+        }
+      },
+      {
+        "id": "payer-audit",
+        "workspace": "/sandbox/.openclaw/workspace-payer-audit",
+        "model": {
+          "primary": "__MODEL_REF__"
+        },
+        "skills": [
+          "healthcare-payer-audit",
+          "healthcare-governance-egress"
+        ],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "read",
+            "exec",
+            "process",
+            "session_status"
+          ],
+          "deny": [
+            "sessions_spawn",
+            "sessions_send",
+            "sessions_yield",
+            "subagents"
+          ]
+        }
+      },
+      {
+        "id": "command-writer",
+        "workspace": "/sandbox/.openclaw/workspace-command-writer",
+        "model": {
+          "primary": "__MODEL_REF__"
+        },
+        "skills": [
+          "healthcare-command-summary",
+          "healthcare-governance-egress"
+        ],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "read",
+            "exec",
+            "process",
+            "session_status"
+          ],
+          "deny": [
+            "sessions_spawn",
+            "sessions_send",
+            "sessions_yield",
+            "subagents"
+          ]
+        }
+      }
+    ]
+  },
+  "plugins": {
+    "entries": {
+      "acpx": {
+        "enabled": false
+      },
+      "amazon-bedrock": {
+        "enabled": false
+      },
+      "amazon-bedrock-mantle": {
+        "enabled": false
+      },
+      "anthropic": {
+        "enabled": false
+      },
+      "anthropic-vertex": {
+        "enabled": false
+      },
+      "bonjour": {
+        "enabled": false
+      },
+      "browser": {
+        "enabled": false
+      },
+      "deepgram": {
+        "enabled": false
+      },
+      "document-extract": {
+        "enabled": false
+      },
+      "elevenlabs": {
+        "enabled": false
+      },
+      "fireworks": {
+        "enabled": false
+      },
+      "github-copilot": {
+        "enabled": false
+      },
+      "google": {
+        "enabled": false
+      },
+      "kimi": {
+        "enabled": false
+      },
+      "lmstudio": {
+        "enabled": false
+      },
+      "microsoft": {
+        "enabled": false
+      },
+      "mistral": {
+        "enabled": false
+      },
+      "ollama": {
+        "enabled": false
+      },
+      "openai": {
+        "enabled": false
+      },
+      "qqbot": {
+        "enabled": false
+      },
+      "web-readability": {
+        "enabled": false
+      },
+      "xai": {
+        "enabled": false
+      }
+    }
+  },
+  "gateway": {
+    "mode": "local"
+  }
+}
