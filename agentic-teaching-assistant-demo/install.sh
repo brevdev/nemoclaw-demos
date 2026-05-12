@@ -84,6 +84,33 @@ step "Step 1 — Prerequisites"
 
 command -v docker    >/dev/null 2>&1 || fail "docker not found. Install Docker first."
 docker info          >/dev/null 2>&1 || fail "Docker daemon is not running. Start Docker and retry."
+# Compose v2 must be present as a docker CLI plugin — `make up` later runs
+# `docker compose up -d`.  Without the plugin docker parses the args as
+# `docker -d ...` and aborts with a cryptic "unknown shorthand flag" error.
+# Auto-install via apt (Ubuntu/Debian) if missing; otherwise fail with a
+# manual-install hint.
+if ! docker compose version >/dev/null 2>&1; then
+  warn "docker compose v2 plugin not found — installing..."
+  if command -v apt-get >/dev/null 2>&1; then
+    if sudo -n true 2>/dev/null || [ "$(id -u)" = "0" ]; then
+      sudo apt-get update -qq \
+        && sudo apt-get install -y -qq docker-compose-plugin \
+        || fail "apt-get install docker-compose-plugin failed. Install manually and retry."
+    else
+      info "sudo password required to install docker-compose-plugin..."
+      sudo apt-get update -qq \
+        && sudo apt-get install -y -qq docker-compose-plugin \
+        || fail "apt-get install docker-compose-plugin failed. Install manually and retry."
+    fi
+  else
+    fail "docker compose v2 plugin missing and no apt-get available. \
+Install manually — see https://docs.docker.com/compose/install/linux/"
+  fi
+  docker compose version >/dev/null 2>&1 \
+    || fail "docker compose still not callable after install. \
+Check that /usr/libexec/docker/cli-plugins/docker-compose exists and is executable."
+  ok "docker-compose-plugin installed"
+fi
 command -v make      >/dev/null 2>&1 || fail "make not found."
 command -v python3   >/dev/null 2>&1 || fail "python3 not found."
 command -v openshell >/dev/null 2>&1 || fail "openshell CLI not found. Is NemoClaw installed?"
@@ -98,6 +125,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 ok "Docker       : $(docker --version | head -1)"
+ok "Compose v2   : $(docker compose version --short 2>/dev/null || echo 'found')"
 ok "Python       : $(python3 --version)"
 ok "uv           : $(uv --version)"
 ok "openshell    : $(openshell --version 2>/dev/null | head -1 || echo 'found')"
