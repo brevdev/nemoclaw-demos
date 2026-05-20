@@ -130,7 +130,7 @@ Go to **APIs & Services > Library** and enable all of the following:
 
 | Type | When to use | Redirect URI setup |
 |---|---|---|
-| **Desktop app** (recommended) | Running the install script locally or in WSL/Brev. The script handles OAuth via a local server on `localhost:3000`. | No redirect URI configuration needed -- Desktop app credentials allow `localhost` automatically. |
+| **Desktop app** (recommended) | Running the install script locally or in WSL/Brev. The script handles OAuth via a local server on `localhost:8765` (auto-falls-back to a free ephemeral port if 8765 is taken; override with `GOOGLE_OAUTH_CALLBACK_PORT=<n>`). | No redirect URI configuration needed -- Desktop app credentials allow any `localhost` port automatically. |
 | **Web application** | Only if you cannot use `localhost` (e.g., remote server with no browser). You'd use Google's OAuth Playground instead. | You **must** add `https://developers.google.com/oauthplayground` as an authorized redirect URI (no trailing slash). |
 
 > **Most users should choose Desktop app.** If you get a `redirect_uri_mismatch` error, it almost always means you created Web Application credentials but didn't add the redirect URI. Switch to Desktop app to avoid this entirely.
@@ -357,9 +357,9 @@ google-workspace-demo/
 
 | Issue | Fix |
 |---|---|
-| `redirect_uri_mismatch` | You likely created **Web Application** credentials instead of **Desktop app**. Either switch to Desktop app, or add `http://localhost:3000/callback` as an authorized redirect URI on the Web Application credential. |
+| `redirect_uri_mismatch` | You likely created **Web Application** credentials instead of **Desktop app**. Either switch to Desktop app, or add `http://localhost:8765/callback` as an authorized redirect URI on the Web Application credential. |
 | OAuth Error 403: access_denied | Add your Gmail as a test user: Google Cloud Console > APIs & Services > OAuth consent screen > Test users |
-| Port 3000 in use during OAuth | `lsof -i :3000` then `kill <PID>` |
+| Port 8765 in use during OAuth | The script auto-falls-back to a free ephemeral port and prints which one it picked. If you need a specific port (e.g. for a firewall rule), set `GOOGLE_OAUTH_CALLBACK_PORT=<n>` before running. |
 | Refresh token expired after 7 days | App is in Testing mode. Re-run `./install.sh` option 2 to get a fresh token. See [Testing Mode vs Production](#testing-mode-vs-production) to avoid this. |
 | "scope error" or "insufficient permissions" | The token was issued with old scopes; re-run OAuth flow (option 2 in install.sh) |
 

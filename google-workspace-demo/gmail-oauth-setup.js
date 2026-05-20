@@ -31,7 +31,19 @@ const SCOPES = [
   "https://www.googleapis.com/auth/contacts.readonly",
   "https://www.googleapis.com/auth/tasks",
 ].join(" ");
-const REDIRECT_URI = "http://localhost:3000/callback";
+
+// OAuth callback port selection.
+//   1) GOOGLE_OAUTH_CALLBACK_PORT env var wins if set (operators with
+//      pinned firewall rules can lock the port).
+//   2) Default is 8765, the loopback-OAuth convention used by gcloud,
+//      firebase, and several IDE plugins. Chosen specifically to avoid
+//      port 3000, which clashes with the NemoClaw dashboard on a
+//      typical Brev launchable.
+//   3) If the chosen port is busy we fall back to 0 (kernel picks a
+//      free ephemeral). Desktop-app OAuth clients accept ANY
+//      http://localhost:<port> redirect, so this needs no config in
+//      the Google Cloud Console.
+const REQUESTED_PORT = Number(process.env.GOOGLE_OAUTH_CALLBACK_PORT || 8765);
 
 function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -57,6 +69,56 @@ function httpsPost(urlStr, body) {
   });
 }
 
+// Spin up the local HTTP server that catches Google's redirect.
+// Tries REQUESTED_PORT first; on EADDRINUSE falls back to a
+// kernel-assigned ephemeral port (port 0). Returns the actual port
+// we bound to plus a promise that resolves with the auth code.
+function startCallbackServer() {
+  return new Promise((resolve, reject) => {
+    let codeResolve, codeReject;
+    const codePromise = new Promise((res, rej) => { codeResolve = res; codeReject = rej; });
+
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, `http://localhost`);
+      if (url.pathname === "/callback") {
+        const authCode = url.searchParams.get("code");
+        const error = url.searchParams.get("error");
+        if (error) {
+          res.writeHead(400, { "Content-Type": "text/html" });
+          res.end(`<h2>Error: ${error}</h2><p>Close this tab and try again.</p>`);
+          codeReject(new Error(error));
+        } else {
+          res.writeHead(200, { "Content-Type": "text/html" });
+          res.end("<h2>Success!</h2><p>You can close this tab and return to the terminal.</p>");
+          codeResolve(authCode);
+        }
+        setTimeout(() => server.close(), 500);
+      }
+    });
+
+    // Persistent 'listening' handler so it fires on whichever attempt
+    // succeeds (a callback passed to .listen() is one-shot and would
+    // miss the retry).
+    server.on("listening", () => {
+      const port = server.address().port;
+      resolve({ server, port, codePromise });
+    });
+
+    let triedEphemeral = false;
+    server.on("error", (e) => {
+      if (e.code === "EADDRINUSE" && !triedEphemeral) {
+        triedEphemeral = true;
+        console.error(`  Port ${REQUESTED_PORT} is in use — falling back to a free ephemeral port.`);
+        server.listen(0);
+        return;
+      }
+      reject(e);
+    });
+
+    server.listen(REQUESTED_PORT);
+  });
+}
+
 async function main() {
   console.log("\n  Google OAuth2 Setup for NemoClaw (Gmail + Calendar + Drive + Docs + Sheets + Contacts + Tasks)\n");
 
@@ -71,9 +133,18 @@ async function main() {
     process.exit(1);
   }
 
+  // Bind the callback server FIRST so we know which port we actually
+  // got (it may differ from REQUESTED_PORT if that port was busy and
+  // we fell back to an ephemeral). Only then do we construct the
+  // redirect_uri and the consent-screen URL — Google requires the
+  // redirect_uri parameter on the /token exchange to be byte-for-byte
+  // identical to the one in the /auth URL.
+  const { server, port: callbackPort, codePromise } = await startCallbackServer();
+  const redirectUri = `http://localhost:${callbackPort}/callback`;
+
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
     `client_id=${encodeURIComponent(clientId)}` +
-    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code` +
     `&scope=${encodeURIComponent(SCOPES)}` +
     `&access_type=offline` +
@@ -81,40 +152,15 @@ async function main() {
 
   console.log("\n  Open this URL in your browser:\n");
   console.log(`  ${authUrl}\n`);
-  console.log("  Waiting for callback on http://localhost:3000 ...\n");
+  console.log(`  Waiting for callback on ${redirectUri} ...\n`);
 
-  const code = await new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      const url = new URL(req.url, "http://localhost:3000");
-      if (url.pathname === "/callback") {
-        const authCode = url.searchParams.get("code");
-        const error = url.searchParams.get("error");
-        if (error) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(`<h2>Error: ${error}</h2><p>Close this tab and try again.</p>`);
-          reject(new Error(error));
-        } else {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end("<h2>Success!</h2><p>You can close this tab and return to the terminal.</p>");
-          resolve(authCode);
-        }
-        setTimeout(() => server.close(), 500);
-      }
-    });
-    server.listen(3000);
-    server.on("error", (e) => {
-      if (e.code === "EADDRINUSE") {
-        console.error("  Port 3000 is in use. Stop whatever is using it and try again.");
-      }
-      reject(e);
-    });
-  });
+  const code = await codePromise;
 
   console.log("  Authorization code received. Exchanging for tokens...\n");
 
   const tokenResp = await httpsPost("https://oauth2.googleapis.com/token", {
     code, client_id: clientId, client_secret: clientSecret,
-    redirect_uri: REDIRECT_URI, grant_type: "authorization_code",
+    redirect_uri: redirectUri, grant_type: "authorization_code",
   });
 
   const tokens = JSON.parse(tokenResp.body);

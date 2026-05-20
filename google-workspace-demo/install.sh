@@ -120,7 +120,7 @@ if [ "$HAS_GOOGLE_CREDS" = false ]; then
   echo "  How do you want to provide Google credentials?"
   echo ""
   echo "    1) Paste credentials directly (if you already have Client ID, Secret, Refresh Token)"
-  echo "    2) Run OAuth2 browser flow (opens localhost:3000 for Google sign-in)"
+  echo "    2) Run OAuth2 browser flow (opens localhost:8765 for Google sign-in)"
   echo ""
   echo -n "  Choice (1/2): "
   read -r CRED_METHOD
